@@ -1,0 +1,36 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker volumes (local)
+pgdata/
+
+# Claude local settings (already inside .claude — don't push personal config)
+.claude/settings.local.json

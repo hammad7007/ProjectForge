@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Plan Forge — Project Management Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/turndown-plugin-gfm/1.0.2/turndown-plugin-gfm.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+</head>
+<body>
+
+<div class="ruler" aria-hidden="true"></div>
+
+<!-- ==================== AUTH VIEW ==================== -->
+<div id="auth-view">
+  <div class="auth-card">
+    <div class="auth-masthead">
+      <div class="emblem">✦</div>
+      <h1>Plan <em>Forge</em>.</h1>
+      <p class="subtitle">Project Management · Drafting Console</p>
+    </div>
+
+    <div class="panel">
+      <span class="tick-bl"></span><span class="tick-br"></span>
+
+      <div class="auth-tabs">
+        <button type="button" class="active" data-tab="login">Sign In</button>
+        <button type="button" data-tab="signup">New Access</button>
+      </div>
+
+      <!-- LOGIN -->
+      <form id="login-form" class="auth-form">
+        <p class="lead">Return to the drafting floor.</p>
+        <label for="login-email">Email Address <span class="req">*</span></label>
+        <input type="email" id="login-email" autocomplete="email" required />
+
+        <label for="login-password">Password <span class="req">*</span></label>
+        <input type="password" id="login-password" autocomplete="current-password" required />
+
+        <div style="margin-top: 22px;">
+          <button type="submit" class="btn" id="login-btn">▸ Grant Access</button>
+        </div>
+      </form>
+
+      <!-- SIGNUP -->
+      <form id="signup-form" class="auth-form hidden">
+        <p class="lead">Requisition a new account.</p>
+        <label for="signup-name">Name</label>
+        <input type="text" id="signup-name" autocomplete="name" placeholder="e.g. Maria Chen" />
+
+        <label for="signup-email">Email Address <span class="req">*</span></label>
+        <input type="email" id="signup-email" autocomplete="email" required />
+
+        <label for="signup-password">Password <span class="req">*</span></label>
+        <input type="password" id="signup-password" autocomplete="new-password" required minlength="6" placeholder="min 6 characters" />
+
+        <div style="margin-top: 22px;">
+          <button type="submit" class="btn" id="signup-btn">▸ Create Account</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="auth-footer">
+      <span>Sheet 01 of 01</span>
+      <span class="divider"></span>
+      <span>Plan Forge · v0.6.0</span>
+      <span class="divider"></span>
+      <div class="theme-switcher" style="margin-top: 12px;">
+        <button class="theme-btn active" data-theme="light" title="Light Theme">☀️</button>
+        <button class="theme-btn" data-theme="dark" title="Dark Theme">🌙</button>
+        <button class="theme-btn" data-theme="midnight" title="Midnight Theme">⭐</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== APP VIEW ==================== -->
+<div id="app-view" class="hidden">
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">Plan <em>Forge</em>.</span>
+      <span class="brand-tag">PM Drafting Console</span>
+    </div>
+    <div class="session">
+      <span class="user"><span class="dot"></span><span id="user-email">—</span></span>
+      <div class="theme-switcher">
+        <button class="theme-btn active" data-theme="light" title="Light Theme">☀️</button>
+        <button class="theme-btn" data-theme="dark" title="Dark Theme">🌙</button>
+        <button class="theme-btn" data-theme="midnight" title="Midnight Theme">⭐</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="settings-btn">⚙ Settings</button>
+      <button class="btn btn-ghost btn-sm" id="logout-btn">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- settings modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>LLM Configuration</h2>
+        <button class="modal-close" id="settings-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <label for="config-provider">LLM Provider <span class="req">*</span></label>
+          <select id="config-provider">
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="openai">ChatGPT (OpenAI)</option>
+            <option value="gemini">Gemini (Google)</option>
+          </select>
+
+          <label for="config-model" id="config-model-label">Model <span class="req">*</span></label>
+          <select id="config-model">
+            <option value="claude-opus-4-1">Claude Opus 4.1</option>
+            <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4 (Latest)</option>
+            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+          </select>
+
+          <label for="config-api-key">API Key <span class="req">*</span></label>
+          <input type="password" id="config-api-key" placeholder="Enter your API key" />
+          <small style="color: var(--paper-dim); display: block; margin-top: 4px;">
+            Your API key is stored securely and only used by the backend.
+          </small>
+
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button class="btn btn-sm" id="config-test-btn">Test Connection</button>
+            <span id="config-test-status"></span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="settings-cancel">Cancel</button>
+        <button class="btn btn-sm" id="config-save-btn">Save & Deploy</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="app-main">
+
+    <!-- sidebar / archive -->
+    <aside class="sidebar">
+      <div class="panel">
+        <span class="tick-bl"></span><span class="tick-br"></span>
+        <div class="panel-head">
+          <span><span class="fig">00</span> · Archive</span>
+          <span id="archive-count">0 items</span>
+        </div>
+        <div class="panel-body">
+          <div class="sidebar-actions">
+            <button class="btn btn-ghost btn-sm" id="new-artifact-btn" style="width: 100%;">＋ New Artifact</button>
+          </div>
+          <div class="archive-list" id="archive-list">
+            <div class="archive-empty">
+              No artifacts yet.
+              <small>generate your first one →</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- main workspace -->
+    <section class="workspace">
+
+      <!-- input panel -->
+      <div class="panel" id="input-panel">
+        <span class="tick-bl"></span><span class="tick-br"></span>
+        <div class="panel-head">
+          <span><span class="fig">01</span> · Draft Specifications</span>
+          <span id="input-status">ready</span>
+        </div>
+        <div class="panel-body">
+
+          <label for="gen-type">Artifact Type <span class="req">*</span></label>
+          <select id="gen-type">
+            <option value="project_plan">Project Plan / Charter</option>
+            <option value="timeline">Timeline with Milestones</option>
+            <option value="wbs">Work Breakdown Structure (WBS)</option>
+            <option value="risk_register">Risk Register</option>
+            <option value="raci">RACI Matrix</option>
+            <option value="status_report">Weekly Status Report</option>
+            <option value="stakeholder_map">Stakeholder Analysis</option>
+            <option value="sprint_plan">Sprint Plan</option>
+            <option value="retro">Retrospective</option>
+            <option value="meeting_agenda">Meeting Agenda</option>
+            <option value="comms_plan">Communication Plan</option>
+            <option value="budget">Budget Breakdown</option>
+          </select>
+
+          <div id="dynamic-fields"></div>
+
+          <div class="mission" id="mission-brief">
+            <b>Scope</b>
+            <span id="mission-text"></span>
+          </div>
+
+          <div class="upload-row">
+            <button type="button" class="btn btn-ghost btn-sm" id="upload-doc-btn">
+              📎 Upload & Fill from Document
+            </button>
+            <span class="upload-hint" id="upload-hint"></span>
+            <input type="file" id="upload-file-input"
+              accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md"
+              style="display:none" />
+          </div>
+
+          <div class="submit-row">
+            <button class="btn" id="deploy-btn">▶ Generate Artifact</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- output panel -->
+      <div class="panel" id="output-panel">
+        <span class="tick-bl"></span><span class="tick-br"></span>
+        <div class="panel-head">
+          <span><span class="fig">02</span> · Rendered Output</span>
+          <div class="output-actions">
+            <button class="btn btn-ghost btn-sm hidden" id="copy-btn">Copy</button>
+            <button class="btn btn-ghost btn-sm hidden" id="edit-btn">✏ Edit</button>
+            <div style="position: relative;">
+              <button class="btn btn-ghost btn-sm hidden" id="download-btn" style="min-width: 120px;">
+                📥 Export
+              </button>
+              <select class="download-format hidden" id="download-format">
+                <optgroup label="📄 Standard Formats">
+                  <option value="markdown" data-format="markdown">Markdown File</option>
+                  <option value="csv" data-format="csv">CSV Format</option>
+                  <option value="excel" data-format="excel">Excel Workbook</option>
+                  <option value="generic" data-format="generic">Generic PM Excel</option>
+                </optgroup>
+                <optgroup label="⚡ Project Management">
+                  <option value="jira" data-format="jira">Jira Issues</option>
+                  <option value="asana" data-format="asana">Asana Tasks</option>
+                  <option value="monday" data-format="monday">Monday.com</option>
+                  <option value="linear" data-format="linear">Linear Issues</option>
+                  <option value="azure" data-format="azure">Azure DevOps</option>
+                  <option value="msproject" data-format="msproject">MS Project</option>
+                  <option value="wrike" data-format="wrike">Wrike Tasks</option>
+                  <option value="smartsheet" data-format="smartsheet">Smartsheet</option>
+                  <option value="trello" data-format="trello">Trello Cards</option>
+                </optgroup>
+                <optgroup label="👥 Development &amp; Collab">
+                  <option value="github" data-format="github">GitHub Issues</option>
+                </optgroup>
+                <optgroup label="📝 Documentation">
+                  <option value="confluence" data-format="confluence">Confluence Doc</option>
+                  <option value="notion" data-format="notion">Notion Page</option>
+                  <option value="googlesheets" data-format="googlesheets">Google Sheets</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="output-body" id="output-body">
+          <div class="empty-state">
+            <span class="big">Standing by.</span>
+            <span class="small">Set specifications above, then generate.</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<!-- toast host -->
+<div id="toast-host"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

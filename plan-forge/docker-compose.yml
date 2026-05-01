@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: planforge-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: planforge
+      POSTGRES_PASSWORD: planforge_dev_pw
+      POSTGRES_DB: planforge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U planforge -d planforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - forgenet
+
+  backend:
+    build: ./backend
+    container_name: planforge-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://planforge:planforge_dev_pw@db:5432/planforge
+      JWT_SECRET: ${JWT_SECRET:-dev-change-me-in-prod-please}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      PORT: "4000"
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - forgenet
+
+  frontend:
+    build: ./frontend
+    container_name: planforge-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - forgenet
+
+volumes:
+  pgdata:
+
+networks:
+  forgenet:
+    driver: bridge

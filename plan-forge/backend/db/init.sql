@@ -1,0 +1,70 @@
+-- Plan Forge — database schema
+-- Runs automatically on first db container boot (see docker-compose.yml).
+
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artifact_type VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  inputs JSONB NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_user_created
+  ON artifacts(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_type
+  ON artifacts(artifact_type);
+
+CREATE TABLE IF NOT EXISTS llm_config (
+  id SERIAL PRIMARY KEY,
+  provider VARCHAR(64) NOT NULL DEFAULT 'claude',
+  model VARCHAR(255) NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+  api_key VARCHAR(1024) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tool_connections (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tool_name VARCHAR(64) NOT NULL,
+  account_name VARCHAR(255),
+  access_token TEXT,
+  refresh_token TEXT,
+  token_expires_at TIMESTAMPTZ,
+  api_key VARCHAR(1024),
+  workspace_id VARCHAR(255),
+  team_id VARCHAR(255),
+  extra_config JSONB,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, tool_name)
+);
+
+CREATE TABLE IF NOT EXISTS push_history (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artifact_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+  tool_name VARCHAR(64) NOT NULL,
+  tool_item_id VARCHAR(255),
+  tool_item_url VARCHAR(512),
+  status VARCHAR(32),
+  error_message TEXT,
+  pushed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_connections_user
+  ON tool_connections(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_history_artifact
+  ON push_history(artifact_id);
