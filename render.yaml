@@ -10,6 +10,7 @@ services:
     runtime: docker
     plan: free
     region: oregon
+    branch: Develop
     rootDir: plan-forge
     dockerfilePath: ./Dockerfile.deploy
     dockerContext: .
