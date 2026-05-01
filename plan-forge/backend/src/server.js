@@ -7,6 +7,7 @@ const multer = require("multer");
 const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const path = require("path");
+const fs = require("fs");
 
 const { pool, initDb } = require("./db");
 const { SYSTEM_PROMPT, buildUserPrompt, VALID_TYPES } = require("./prompts");
@@ -1600,6 +1601,17 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
     res.status(500).json({ error: "failed to save artifact" });
   }
 });
+
+// Single-service deploy: serve the frontend from ../public when bundled.
+// Local docker-compose uses nginx in front, so this block is a no-op there.
+const PUBLIC_DIR = path.join(__dirname, "..", "public");
+if (fs.existsSync(PUBLIC_DIR)) {
+  app.use(express.static(PUBLIC_DIR));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    res.sendFile(path.join(PUBLIC_DIR, "index.html"));
+  });
+}
 
 // ------- boot -------
 initDb()

@@ -220,6 +220,44 @@ This is a local-dev setup. Before putting it on the internet:
 
 ---
 
+## Deploy to Render (free tier)
+
+The repo ships a `render.yaml` blueprint and a deploy-only Dockerfile (`plan-forge/Dockerfile.deploy`) that bundles the static frontend into the backend image so the whole app runs as one Render web service plus a managed Postgres database.
+
+### 1. Push code to GitHub
+
+Already done if you cloned this repo. Render reads from a GitHub repo on every push.
+
+### 2. Create the services on Render
+
+1. Sign in to [render.com](https://render.com) with the same GitHub account that owns this repo.
+2. Click **New** → **Blueprint**.
+3. Pick the `ProjectForge` repo. Render detects `render.yaml` and shows: 1 Postgres database + 1 web service.
+4. Click **Apply**. Postgres provisions in ~1 minute; the web service starts building.
+
+### 3. Set the secret env vars
+
+Render won't auto-fill secrets. Open the `planforge` web service → **Environment**:
+
+- `ANTHROPIC_API_KEY` — your real key from [console.anthropic.com](https://console.anthropic.com/settings/keys)
+- `JWT_SECRET` — a long random string, e.g. `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+
+`DATABASE_URL` is wired in automatically by the blueprint.
+
+Save → Render redeploys.
+
+### 4. Open the app
+
+Once the build is green you'll get a public URL like `https://planforge.onrender.com`. Sign up, generate an artifact, done.
+
+### Notes
+
+- The free web service spins down after ~15 minutes of idle and cold-starts in ~30s on the next request.
+- The free Postgres expires after 90 days — back it up (`pg_dump`) before then or upgrade.
+- Pushes to `main` auto-deploy; pushes to other branches don't.
+
+---
+
 ## License
 
 Do whatever you want with this. No warranty.

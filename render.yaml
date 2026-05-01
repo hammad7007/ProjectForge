@@ -1,0 +1,27 @@
+databases:
+  - name: planforge-db
+    plan: free
+    databaseName: planforge
+    user: planforge
+
+services:
+  - type: web
+    name: planforge
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: plan-forge
+    dockerfilePath: ./Dockerfile.deploy
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: planforge-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
