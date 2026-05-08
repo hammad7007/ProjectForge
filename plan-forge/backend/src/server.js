@@ -10,7 +10,13 @@ const path = require("path");
 const fs = require("fs");
 
 const { pool, initDb } = require("./db");
-const { SYSTEM_PROMPT, buildUserPrompt, VALID_TYPES } = require("./prompts");
+const { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, VALID_TYPES, VALID_METHODOLOGIES } = require("./prompts");
+
+function normalizeMethodology(m) {
+  if (typeof m !== "string") return null;
+  const t = m.trim();
+  return VALID_METHODOLOGIES.includes(t) ? t : null;
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -763,7 +769,7 @@ async function pushToTrello(connection, artifact, customization) {
 // list (only metadata, not full content)
 app.get("/api/artifacts", authRequired, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, artifact_type, title, created_at
+    `SELECT id, artifact_type, title, parent_id, revision, created_at
      FROM artifacts
      WHERE user_id = $1
      ORDER BY created_at DESC
@@ -779,13 +785,40 @@ app.get("/api/artifacts/:id", authRequired, async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: "invalid id" });
 
   const { rows } = await pool.query(
-    `SELECT id, artifact_type, title, inputs, content, created_at
+    `SELECT id, artifact_type, title, inputs, content, parent_id, revision, revision_note, created_at
      FROM artifacts
      WHERE id = $1 AND user_id = $2`,
     [id, req.user.sub]
   );
   if (!rows.length) return res.status(404).json({ error: "not found" });
   res.json({ artifact: rows[0] });
+});
+
+// list all revisions in the same chain (root + descendants), oldest first
+app.get("/api/artifacts/:id/revisions", authRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "invalid id" });
+
+  try {
+    const { rows: targetRows } = await pool.query(
+      `SELECT id, parent_id FROM artifacts WHERE id = $1 AND user_id = $2`,
+      [id, req.user.sub]
+    );
+    if (!targetRows.length) return res.status(404).json({ error: "not found" });
+
+    const rootId = targetRows[0].parent_id || targetRows[0].id;
+    const { rows } = await pool.query(
+      `SELECT id, artifact_type, title, parent_id, revision, revision_note, created_at
+       FROM artifacts
+       WHERE user_id = $1 AND (id = $2 OR parent_id = $2)
+       ORDER BY revision ASC, created_at ASC`,
+      [req.user.sub, rootId]
+    );
+    res.json({ root_id: rootId, revisions: rows });
+  } catch (err) {
+    console.error("[list revisions]", err);
+    res.status(500).json({ error: "failed to list revisions" });
+  }
 });
 
 // delete
@@ -1413,16 +1446,209 @@ function generateGoogleSheetsFormat(artifact) {
   return lines.join("\n");
 }
 
+// Resolve which LLM provider/model/key to use (DB config wins, env fallback).
+async function resolveLlmConfig() {
+  const { rows } = await pool.query(
+    `SELECT provider, model, api_key FROM llm_config ORDER BY updated_at DESC LIMIT 1`
+  );
+  if (rows.length) {
+    return { provider: rows[0].provider, model: rows[0].model, apiKey: rows[0].api_key };
+  }
+  if (!ANTHROPIC_API_KEY) return null;
+  return { provider: "claude", model: "claude-sonnet-4-20250514", apiKey: ANTHROPIC_API_KEY };
+}
+
+// Call the configured LLM with a system + user message and return the text content.
+// Returns { ok: true, content } or { ok: false, status, error, detail }.
+async function callLLM({ provider, model, apiKey, systemPrompt, userMsg, maxTokens = 2500 }) {
+  let resp;
+  try {
+    if (provider === "claude") {
+      resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMsg }],
+        }),
+      });
+    } else if (provider === "openai") {
+      resp = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          temperature: 1,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMsg },
+          ],
+        }),
+      });
+    } else if (provider === "gemini") {
+      resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userMsg }] }],
+            generationConfig: { maxOutputTokens: maxTokens },
+          }),
+        }
+      );
+    } else {
+      return { ok: false, status: 400, error: `unsupported provider: ${provider}` };
+    }
+  } catch (err) {
+    return { ok: false, status: 502, error: `${provider} api unreachable` };
+  }
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    console.error(`[${provider} error]`, resp.status, errText.slice(0, 500));
+    return {
+      ok: false,
+      status: 502,
+      error: `${provider} api error: ${resp.status}`,
+      detail: errText.slice(0, 500),
+    };
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    return { ok: false, status: 502, error: `${provider} returned invalid json` };
+  }
+
+  let content = "";
+  if (provider === "claude") {
+    content = (data.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
+  } else if (provider === "openai") {
+    content = (data.choices || [])
+      .filter((c) => c.message && c.message.content)
+      .map((c) => c.message.content)
+      .join("\n")
+      .trim();
+  } else if (provider === "gemini") {
+    content = (data.candidates || [])
+      .flatMap((c) => (c.content?.parts || []))
+      .filter((p) => p.text)
+      .map((p) => p.text)
+      .join("\n")
+      .trim();
+  }
+
+  if (!content) return { ok: false, status: 502, error: "empty generation" };
+  return { ok: true, content };
+}
+
+// revise — generate a new revision of an existing artifact
+app.post("/api/artifacts/:id/revise", authRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "invalid id" });
+
+  const { instructions, inputs: inputOverrides, methodology } = req.body || {};
+  if (!instructions || typeof instructions !== "string" || !instructions.trim()) {
+    return res.status(400).json({ error: "instructions required" });
+  }
+  const trimmedInstructions = instructions.trim().slice(0, 4000);
+  const normMethodology = normalizeMethodology(methodology);
+
+  // Load source artifact (auth-checked)
+  let source;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, user_id, artifact_type, title, inputs, content, parent_id
+       FROM artifacts WHERE id = $1 AND user_id = $2`,
+      [id, req.user.sub]
+    );
+    if (!rows.length) return res.status(404).json({ error: "not found" });
+    source = rows[0];
+  } catch (err) {
+    console.error("[revise: load source]", err);
+    return res.status(500).json({ error: "failed to load source artifact" });
+  }
+
+  if (!VALID_TYPES.includes(source.artifact_type)) {
+    return res.status(400).json({ error: "source artifact has unknown type" });
+  }
+
+  const rootId = source.parent_id || source.id;
+  const inputs =
+    inputOverrides && typeof inputOverrides === "object" ? inputOverrides : source.inputs;
+
+  let cfg;
+  try {
+    cfg = await resolveLlmConfig();
+  } catch (err) {
+    console.error("[revise: config]", err);
+    return res.status(500).json({ error: "failed to fetch config" });
+  }
+  if (!cfg) return res.status(500).json({ error: "server not configured: no LLM config found" });
+
+  const userMsg = buildRevisePrompt(source.artifact_type, inputs, source.content, trimmedInstructions, normMethodology);
+  const result = await callLLM({
+    provider: cfg.provider,
+    model: cfg.model,
+    apiKey: cfg.apiKey,
+    systemPrompt: SYSTEM_PROMPT,
+    userMsg,
+    maxTokens: 2500,
+  });
+
+  if (!result.ok) {
+    return res.status(result.status || 502).json({
+      error: result.error,
+      ...(result.detail ? { detail: result.detail } : {}),
+    });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO artifacts
+         (user_id, artifact_type, title, inputs, content, parent_id, revision, revision_note)
+       SELECT $1, $2, $3, $4, $5, $6,
+              COALESCE(MAX(revision), 0) + 1,
+              $7
+       FROM artifacts
+       WHERE user_id = $1 AND (id = $6 OR parent_id = $6)
+       RETURNING id, artifact_type, title, inputs, content, parent_id, revision, revision_note, created_at`,
+      [req.user.sub, source.artifact_type, source.title, inputs, result.content, rootId, trimmedInstructions]
+    );
+    res.json({ artifact: rows[0] });
+  } catch (err) {
+    console.error("[revise: save]", err);
+    res.status(500).json({ error: "failed to save revision" });
+  }
+});
+
 // generate + save
 app.post("/api/artifacts", authRequired, async (req, res) => {
-  const { artifact_type, title, inputs } = req.body || {};
+  const { artifact_type, title, inputs, methodology } = req.body || {};
 
   if (!VALID_TYPES.includes(artifact_type))
     return res.status(400).json({ error: "invalid artifact_type" });
   if (!inputs || typeof inputs !== "object")
     return res.status(400).json({ error: "inputs object required" });
 
-  const userMsg = buildUserPrompt(artifact_type, inputs);
+  const userMsg = buildUserPrompt(artifact_type, inputs, normalizeMethodology(methodology));
 
   // fetch config from database
   let configRows, provider, model, apiKey;
@@ -1592,7 +1818,7 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO artifacts (user_id, artifact_type, title, inputs, content)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, artifact_type, title, inputs, content, created_at`,
+       RETURNING id, artifact_type, title, inputs, content, parent_id, revision, revision_note, created_at`,
       [req.user.sub, artifact_type, cleanTitle, inputs, content]
     );
     res.json({ artifact: rows[0] });

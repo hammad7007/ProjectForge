@@ -92,6 +92,16 @@
     </div>
     <div class="session">
       <span class="user"><span class="dot"></span><span id="user-email">—</span></span>
+      <div class="methodology-switcher" title="Project methodology — threads terminology into prompts">
+        <span class="methodology-label">METHOD</span>
+        <select id="methodology-select">
+          <option value="">— none —</option>
+          <option value="PMBOK">PMBOK</option>
+          <option value="Agile">Agile</option>
+          <option value="PRINCE2">PRINCE2</option>
+          <option value="Hybrid">Hybrid</option>
+        </select>
+      </div>
       <div class="theme-switcher">
         <button class="theme-btn active" data-theme="light" title="Light Theme">☀️</button>
         <button class="theme-btn" data-theme="dark" title="Dark Theme">🌙</button>
@@ -101,6 +111,32 @@
       <button class="btn btn-ghost btn-sm" id="logout-btn">Sign Out</button>
     </div>
   </header>
+
+  <!-- refine modal -->
+  <div id="refine-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Refine Artifact</h2>
+        <button class="modal-close" id="refine-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <p class="lead" id="refine-context" style="margin-top: 0;"></p>
+          <label for="refine-instructions">Refinement Instructions <span class="req">*</span></label>
+          <textarea id="refine-instructions" rows="6"
+            placeholder="e.g. Tighten the executive summary. Add a section on regulatory risk. Replace the 6-month timeline with a 4-month one."></textarea>
+          <small style="color: var(--paper-dim); display: block; margin-top: 4px;">
+            A new revision will be saved alongside the original — the original is not modified.
+          </small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="refine-cancel">Cancel</button>
+        <button class="btn btn-sm" id="refine-submit">▸ Generate Revision</button>
+      </div>
+    </div>
+  </div>
 
   <!-- settings modal -->
   <div id="settings-modal" class="modal hidden">
@@ -183,18 +219,28 @@
 
           <label for="gen-type">Artifact Type <span class="req">*</span></label>
           <select id="gen-type">
-            <option value="project_plan">Project Plan / Charter</option>
-            <option value="timeline">Timeline with Milestones</option>
-            <option value="wbs">Work Breakdown Structure (WBS)</option>
-            <option value="risk_register">Risk Register</option>
-            <option value="raci">RACI Matrix</option>
-            <option value="status_report">Weekly Status Report</option>
-            <option value="stakeholder_map">Stakeholder Analysis</option>
-            <option value="sprint_plan">Sprint Plan</option>
-            <option value="retro">Retrospective</option>
-            <option value="meeting_agenda">Meeting Agenda</option>
-            <option value="comms_plan">Communication Plan</option>
-            <option value="budget">Budget Breakdown</option>
+            <optgroup label="Initiation &amp; Planning">
+              <option value="project_plan">Project Plan / Charter</option>
+              <option value="timeline">Timeline with Milestones</option>
+              <option value="wbs">Work Breakdown Structure (WBS)</option>
+              <option value="raci">RACI Matrix</option>
+              <option value="stakeholder_map">Stakeholder Analysis</option>
+              <option value="comms_plan">Communication Plan</option>
+              <option value="budget">Budget Breakdown</option>
+            </optgroup>
+            <optgroup label="Execution &amp; Monitoring">
+              <option value="status_report">Weekly Status Report</option>
+              <option value="risk_register">Risk Register</option>
+              <option value="issue_log">Issue Log</option>
+              <option value="change_request">Change Request</option>
+              <option value="sprint_plan">Sprint Plan</option>
+              <option value="meeting_agenda">Meeting Agenda</option>
+            </optgroup>
+            <optgroup label="Closing &amp; Learning">
+              <option value="retro">Retrospective</option>
+              <option value="lessons_learned">Lessons Learned Register</option>
+              <option value="project_closure">Project Closure Report</option>
+            </optgroup>
           </select>
 
           <div id="dynamic-fields"></div>
@@ -226,6 +272,8 @@
         <div class="panel-head">
           <span><span class="fig">02</span> · Rendered Output</span>
           <div class="output-actions">
+            <select class="revisions-select hidden" id="revisions-select" title="Switch revision"></select>
+            <button class="btn btn-ghost btn-sm hidden" id="refine-btn">✦ Refine</button>
             <button class="btn btn-ghost btn-sm hidden" id="copy-btn">Copy</button>
             <button class="btn btn-ghost btn-sm hidden" id="edit-btn">✏ Edit</button>
             <div style="position: relative;">

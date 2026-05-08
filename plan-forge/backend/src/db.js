@@ -47,8 +47,14 @@ async function ensureSchema() {
       content TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS parent_id INTEGER
+      REFERENCES artifacts(id) ON DELETE CASCADE;
+    ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS revision_note TEXT;
     CREATE INDEX IF NOT EXISTS idx_artifacts_user_created
       ON artifacts(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_parent
+      ON artifacts(parent_id);
     CREATE TABLE IF NOT EXISTS llm_config (
       id SERIAL PRIMARY KEY,
       provider VARCHAR(64) NOT NULL DEFAULT 'claude',

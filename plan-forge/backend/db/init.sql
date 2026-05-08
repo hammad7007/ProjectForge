@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS artifacts (
   title VARCHAR(255) NOT NULL,
   inputs JSONB NOT NULL,
   content TEXT NOT NULL,
+  parent_id INTEGER REFERENCES artifacts(id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL DEFAULT 1,
+  revision_note TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -24,6 +27,9 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_user_created
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_type
   ON artifacts(artifact_type);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_parent
+  ON artifacts(parent_id);
 
 CREATE TABLE IF NOT EXISTS llm_config (
   id SERIAL PRIMARY KEY,

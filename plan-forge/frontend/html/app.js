@@ -8,160 +8,338 @@
   const $ = (id) => document.getElementById(id);
   const TOKEN_KEY = 'planforge_token';
   const USER_KEY = 'planforge_user';
+  const METHODOLOGY_KEY = 'planforge_methodology';
+  const VALID_METHODOLOGIES = ['PMBOK', 'Agile', 'PRINCE2', 'Hybrid'];
+
+  function getMethodology() {
+    const m = localStorage.getItem(METHODOLOGY_KEY) || '';
+    return VALID_METHODOLOGIES.includes(m) ? m : '';
+  }
 
   // ===================================================================
   // ARTIFACT SCHEMAS (fields per artifact type — kept client-side for UI)
   // ===================================================================
   const SCHEMAS = {
     project_plan: {
-      brief: "A full project charter — objectives, scope, deliverables, phases, team, risks, success criteria.",
+      brief: "A full project charter — objectives, scope, deliverables, phases, team, risks, success criteria, governance.",
       fields: [
-        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Customer Portal Redesign", required: true },
-        { id: "objective", label: "Objective / Business Goal", type: "textarea", placeholder: "What outcome are you trying to achieve? Why now?", required: true },
-        { id: "scope", label: "Scope (what's in)", type: "textarea", placeholder: "e.g. Redesign of login, dashboard, billing pages. New auth provider." },
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Customer Portal Redesign", required: true, maxLength: 100 },
+        { id: "sponsor", label: "Project Sponsor (Name & Role)", type: "text", placeholder: "e.g. Maria Chen, VP Product", maxLength: 100 },
+        { id: "objective", label: "Objective / Business Goal", type: "textarea", placeholder: "What outcome are you trying to achieve? Why now?", required: true, maxLength: 1000 },
+        { id: "scope", label: "Scope (what's in)", type: "textarea", placeholder: "e.g. Redesign of login, dashboard, billing pages. New auth provider.", maxLength: 1500 },
+        { id: "out_of_scope", label: "Out of Scope (what's NOT)", type: "textarea", placeholder: "What you're explicitly excluding, to prevent scope creep.", maxLength: 1000 },
+        { id: "success_metrics", label: "Success Metrics / KPIs", type: "textarea", placeholder: "e.g. NPS > 50, login time < 2s, support tickets -30%", maxLength: 800 },
         { id: "duration", label: "Target Duration", type: "select", options: [
           "Under 1 month", "1–3 months", "3–6 months", "6–12 months", "Over 12 months"
         ]},
-        { id: "team_size", label: "Team Size", type: "number", placeholder: "5" },
-        { id: "constraints", label: "Constraints / Non-Negotiables", type: "textarea", placeholder: "e.g. Must ship before Q3. Fixed budget of $120k." }
+        { id: "team_size", label: "Team Size", type: "number", placeholder: "5", min: 1, max: 500 },
+        { id: "budget_envelope", label: "Approximate Budget Envelope (USD)", type: "number", placeholder: "120000", min: 0, max: 1000000000 },
+        { id: "risk_appetite", label: "Risk Appetite", type: "select", options: [
+          "Low — must avoid surprises", "Medium — balanced", "High — speed over certainty"
+        ]},
+        { id: "constraints", label: "Constraints / Non-Negotiables", type: "textarea", placeholder: "e.g. Must ship before Q3. Fixed budget of $120k.", maxLength: 800 }
       ]
     },
     timeline: {
       brief: "A phased timeline with milestones, rendered as a Gantt chart + milestone table.",
       fields: [
-        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Mobile App Launch", required: true },
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Mobile App Launch", required: true, maxLength: 100 },
         { id: "start_date", label: "Start Date", type: "date", required: true },
-        { id: "end_date", label: "Target End Date", type: "date", required: true },
-        { id: "phases", label: "Known Phases (optional)", type: "textarea", placeholder: "e.g. Discovery, Design, Build, QA, Launch — or leave blank to infer." },
-        { id: "deliverables", label: "Major Deliverables / Milestones", type: "textarea", placeholder: "e.g. Beta release, App Store submission, Marketing launch." }
+        { id: "end_date", label: "Target End Date", type: "date", required: true, compareTo: "start_date", compareOp: "after" },
+        { id: "team_capacity", label: "Team Capacity (FTE)", type: "number", placeholder: "5", min: 1, max: 200 },
+        { id: "phases", label: "Known Phases (optional)", type: "textarea", placeholder: "e.g. Discovery, Design, Build, QA, Launch — or leave blank to infer.", maxLength: 800 },
+        { id: "deliverables", label: "Major Deliverables / Milestones", type: "textarea", placeholder: "e.g. Beta release, App Store submission, Marketing launch.", maxLength: 1200 },
+        { id: "external_dependencies", label: "External Dependencies", type: "textarea", placeholder: "Vendors, partner teams, regulators that affect the schedule.", maxLength: 800 },
+        { id: "buffer_strategy", label: "Schedule Buffer Strategy", type: "select", options: [
+          "Fixed buffer — 10–15% per phase",
+          "Critical-chain buffer — pooled at end",
+          "No formal buffer — best-case planning",
+          "Iterative — re-baseline each cycle"
+        ]}
       ]
     },
     wbs: {
-      brief: "A hierarchical breakdown of the project into workstreams, tasks, and sub-tasks.",
+      brief: "A hierarchical breakdown of the project into workstreams, tasks, and sub-tasks with effort estimates.",
       fields: [
-        { id: "project_name", label: "Project / Deliverable", type: "text", placeholder: "e.g. Website Relaunch", required: true },
-        { id: "scope", label: "What are we building?", type: "textarea", placeholder: "Describe the end deliverable in 2–4 sentences.", required: true },
+        { id: "project_name", label: "Project / Deliverable", type: "text", placeholder: "e.g. Website Relaunch", required: true, maxLength: 100 },
+        { id: "scope", label: "What are we building?", type: "textarea", placeholder: "Describe the end deliverable in 2–4 sentences.", required: true, maxLength: 1500 },
         { id: "depth", label: "Breakdown Depth", type: "select", options: [
           "2 levels (workstreams → tasks)",
           "3 levels (workstreams → tasks → subtasks)",
           "4 levels (detailed for execution)"
         ]},
-        { id: "known_components", label: "Known Workstreams (optional)", type: "textarea", placeholder: "e.g. Backend, Frontend, Content, Infra — or leave blank to infer." }
+        { id: "estimation_method", label: "Estimation Method", type: "select", options: [
+          "Expert judgment",
+          "Analogous (similar past projects)",
+          "Parametric (per-unit)",
+          "Three-point (PERT: O/M/P)",
+          "Story points",
+          "T-shirt sizing"
+        ]},
+        { id: "assumed_team_size", label: "Assumed Team Size", type: "number", placeholder: "5", min: 1, max: 200 },
+        { id: "known_components", label: "Known Workstreams (optional)", type: "textarea", placeholder: "e.g. Backend, Frontend, Content, Infra — or leave blank to infer.", maxLength: 800 },
+        { id: "constraints", label: "Hard Constraints", type: "textarea", placeholder: "Tech stack, vendor lock-in, must-reuse components, etc.", maxLength: 800 }
       ]
     },
     risk_register: {
-      brief: "A prioritized risk register — each risk with likelihood, impact, mitigation, and owner.",
+      brief: "A prioritized risk register — each risk with likelihood, impact, mitigation, owner, and trigger signal.",
       fields: [
-        { id: "project_context", label: "Project Context", type: "textarea", placeholder: "Describe the project and its current state in 3–5 sentences.", required: true },
+        { id: "project_context", label: "Project Context", type: "textarea", placeholder: "Describe the project and its current state in 3–5 sentences.", required: true, maxLength: 2000 },
         { id: "phase", label: "Current Phase", type: "select", options: [
           "Initiation / Planning", "Execution", "Monitoring", "Closing", "Ongoing / BAU"
         ]},
-        { id: "known_risks", label: "Known Concerns (optional)", type: "textarea", placeholder: "Any risks already on your radar — or leave blank to infer." },
+        { id: "industry", label: "Industry / Domain", type: "text", placeholder: "e.g. Healthcare, FinTech, SaaS, Manufacturing", maxLength: 60 },
+        { id: "team_size", label: "Team Size", type: "number", placeholder: "5", min: 1, max: 500 },
+        { id: "known_risks", label: "Known Concerns (optional)", type: "textarea", placeholder: "Any risks already on your radar — or leave blank to infer.", maxLength: 1500 },
         { id: "appetite", label: "Risk Appetite", type: "select", options: [
           "Low — must avoid surprises",
           "Medium — balanced",
           "High — moving fast, some risk acceptable"
-        ]}
+        ]},
+        { id: "compliance_context", label: "Compliance / Regulatory Context", type: "textarea", placeholder: "GDPR, HIPAA, SOC2, PCI, etc. that bound the risk landscape.", maxLength: 600 }
       ]
     },
     raci: {
       brief: "A RACI matrix — who's Responsible, Accountable, Consulted, Informed for each activity.",
       fields: [
-        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. CRM Migration", required: true },
-        { id: "activities", label: "Activities / Decisions", type: "textarea", placeholder: "List key activities, one per line.\ne.g.\nRequirements gathering\nVendor selection\nData migration\nUAT sign-off\nGo-live decision", required: true },
-        { id: "roles", label: "Roles Involved", type: "textarea", placeholder: "List roles (not people).\ne.g.\nProject Manager\nEngineering Lead\nBusiness Sponsor\nEnd User Rep\nQA Lead", required: true }
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. CRM Migration", required: true, maxLength: 100 },
+        { id: "activities", label: "Activities / Decisions", type: "textarea", placeholder: "List key activities, one per line.\ne.g.\nRequirements gathering\nVendor selection\nData migration\nUAT sign-off\nGo-live decision", required: true, maxLength: 2500 },
+        { id: "roles", label: "Roles Involved", type: "textarea", placeholder: "List roles (not people).\ne.g.\nProject Manager\nEngineering Lead\nBusiness Sponsor\nEnd User Rep\nQA Lead", required: true, maxLength: 1500 },
+        { id: "governance_level", label: "Governance Level", type: "select", options: [
+          "Tactical — task-level RACI",
+          "Operational — workstream level",
+          "Strategic — program / steering committee level"
+        ]},
+        { id: "phase", label: "Project Phase", type: "select", options: [
+          "Initiation", "Planning", "Execution", "Monitoring & Control", "Closing"
+        ]}
       ]
     },
     status_report: {
-      brief: "A concise weekly status report — traffic-light health, progress, next steps, risks, asks.",
+      brief: "A concise weekly status report — traffic-light health, progress, next steps, risks, asks, KPIs.",
       fields: [
-        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Payments Platform v2", required: true },
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Payments Platform v2", required: true, maxLength: 100 },
         { id: "report_date", label: "Report Date", type: "date" },
+        { id: "audience", label: "Primary Audience", type: "select", options: [
+          "Project Sponsor / Steering",
+          "Functional managers",
+          "Working team",
+          "Cross-functional stakeholders",
+          "Executives / Board"
+        ]},
         { id: "overall_status", label: "Overall Status", type: "select", options: [
           "🟢 Green — on track",
           "🟡 Yellow — at risk, manageable",
           "🔴 Red — off track, escalation needed"
         ]},
-        { id: "accomplishments", label: "What Got Done This Period", type: "textarea", placeholder: "Bullets. Be specific — 'shipped API v2' not 'made progress'.", required: true },
-        { id: "next_steps", label: "Planned for Next Period", type: "textarea", placeholder: "What's the plan for next week?" },
-        { id: "blockers", label: "Blockers / Risks / Asks", type: "textarea", placeholder: "What do you need from stakeholders?" }
+        { id: "schedule_status", label: "Schedule Status", type: "select", options: [
+          "On / ahead", "1–2 weeks behind", "3–4 weeks behind", ">1 month behind", "Re-baselined"
+        ]},
+        { id: "budget_status", label: "Budget Status", type: "select", options: [
+          "Under budget", "On budget", "Over budget — within tolerance", "Over budget — escalation"
+        ]},
+        { id: "kpis", label: "KPIs / Metrics Snapshot", type: "textarea", placeholder: "e.g. CPI: 0.95, SPI: 0.88, defects open: 12, story points 32/40", maxLength: 600 },
+        { id: "accomplishments", label: "What Got Done This Period", type: "textarea", placeholder: "Bullets. Be specific — 'shipped API v2' not 'made progress'.", required: true, maxLength: 1500 },
+        { id: "next_steps", label: "Planned for Next Period", type: "textarea", placeholder: "What's the plan for next week?", maxLength: 1200 },
+        { id: "blockers", label: "Blockers / Risks / Asks", type: "textarea", placeholder: "What do you need from stakeholders?", maxLength: 1200 }
       ]
     },
     stakeholder_map: {
-      brief: "A stakeholder analysis — power/interest grid, engagement strategy per stakeholder.",
+      brief: "A stakeholder analysis — power/interest grid, engagement strategy per stakeholder, escalation paths.",
       fields: [
-        { id: "project_context", label: "Project Context", type: "textarea", placeholder: "Describe the project and the org it lives in.", required: true },
-        { id: "known_stakeholders", label: "Known Stakeholders", type: "textarea", placeholder: "List with role — e.g.\nMaria Chen, VP Product\nFinance team\nEnd customers\nRegulators", required: true },
+        { id: "project_context", label: "Project Context", type: "textarea", placeholder: "Describe the project and the org it lives in.", required: true, maxLength: 1500 },
+        { id: "known_stakeholders", label: "Known Stakeholders", type: "textarea", placeholder: "List with role — e.g.\nMaria Chen, VP Product\nFinance team\nEnd customers\nRegulators", required: true, maxLength: 2000 },
         { id: "sensitivity", label: "Political Sensitivity", type: "select", options: [
           "Low — routine project", "Medium — visible", "High — board-level / cross-org"
-        ]}
+        ]},
+        { id: "org_size", label: "Organization Size", type: "select", options: [
+          "Small (<100)", "Mid (100–1,000)", "Large (1,000–10,000)", "Enterprise (10,000+)", "Cross-organization / partnership"
+        ]},
+        { id: "primary_change_type", label: "Type of Change", type: "select", options: [
+          "Tech-led", "Process-led", "Org / restructure", "Customer-facing", "Regulatory-driven"
+        ]},
+        { id: "known_blockers", label: "Known Political Dynamics", type: "textarea", placeholder: "Tensions between groups, history of failed projects, turf issues.", maxLength: 1000 }
       ]
     },
     sprint_plan: {
-      brief: "An agile sprint plan — goal, committed stories, capacity, risks.",
+      brief: "An agile sprint plan — goal, committed stories, capacity, risks, definition of done.",
       fields: [
-        { id: "team_name", label: "Team / Product", type: "text", placeholder: "e.g. Checkout Squad", required: true },
+        { id: "team_name", label: "Team / Product", type: "text", placeholder: "e.g. Checkout Squad", required: true, maxLength: 80 },
+        { id: "sprint_number", label: "Sprint Number", type: "number", placeholder: "e.g. 23", min: 1, max: 999 },
         { id: "sprint_start", label: "Sprint Start Date", type: "date" },
-        { id: "sprint_end", label: "Sprint End Date", type: "date" },
-        { id: "sprint_goal", label: "Sprint Goal", type: "textarea", placeholder: "The single outcome this sprint is committed to.", required: true },
-        { id: "backlog", label: "Backlog / Candidate Stories", type: "textarea", placeholder: "Rough list of stories/features being considered.", required: true },
-        { id: "team_members", label: "Team Member Count", type: "number", placeholder: "e.g. 5" },
-        { id: "constraints", label: "Holidays / Known Absences", type: "textarea", placeholder: "Any capacity hits this sprint." }
+        { id: "sprint_end", label: "Sprint End Date", type: "date", compareTo: "sprint_start", compareOp: "after" },
+        { id: "team_members", label: "Team Member Count", type: "number", placeholder: "e.g. 5", min: 1, max: 30 },
+        { id: "average_velocity", label: "Average Velocity (story points)", type: "number", placeholder: "e.g. 32", min: 0, max: 500 },
+        { id: "sprint_goal", label: "Sprint Goal", type: "textarea", placeholder: "The single outcome this sprint is committed to.", required: true, maxLength: 400 },
+        { id: "backlog", label: "Backlog / Candidate Stories", type: "textarea", placeholder: "Rough list of stories/features being considered.", required: true, maxLength: 2500 },
+        { id: "definition_of_done", label: "Definition of Done (optional)", type: "textarea", placeholder: "Code reviewed, tests added, deployed to staging, docs updated, PO acceptance.", maxLength: 600 },
+        { id: "constraints", label: "Holidays / Known Absences", type: "textarea", placeholder: "Any capacity hits this sprint.", maxLength: 400 }
       ]
     },
     retro: {
       brief: "A retrospective — structured reflection on what worked, what didn't, and concrete action items.",
       fields: [
-        { id: "name", label: "Project / Sprint Name", type: "text", placeholder: "e.g. Q1 Launch Retro", required: true },
+        { id: "name", label: "Project / Sprint Name", type: "text", placeholder: "e.g. Q1 Launch Retro", required: true, maxLength: 100 },
         { id: "retro_date", label: "Retrospective Date", type: "date" },
-        { id: "outcomes", label: "What Happened / Outcomes", type: "textarea", placeholder: "What was delivered, how it went, headline results.", required: true },
+        { id: "team_size", label: "Team Size", type: "number", placeholder: "e.g. 5", min: 1, max: 100 },
+        { id: "team_maturity", label: "Team Maturity", type: "select", options: [
+          "Forming — new team",
+          "Storming — finding norms",
+          "Norming — settled rhythm",
+          "Performing — high autonomy"
+        ]},
+        { id: "outcomes", label: "What Happened / Outcomes", type: "textarea", placeholder: "What was delivered, how it went, headline results.", required: true, maxLength: 1500 },
         { id: "format", label: "Retro Format", type: "select", options: [
           "Start / Stop / Continue",
           "What went well / What didn't / Action items",
           "4Ls — Liked / Learned / Lacked / Longed for",
           "Sailboat — Wind / Anchors / Rocks / Island",
-          "Mad / Sad / Glad"
+          "Mad / Sad / Glad",
+          "DAKI — Drop / Add / Keep / Improve"
         ]},
         { id: "tone", label: "Tone", type: "select", options: [
           "Honest & direct — surface real issues",
           "Constructive & balanced",
           "Celebratory — mostly wins, light on critique"
-        ]}
+        ]},
+        { id: "previous_actions", label: "Previous Action Items (optional)", type: "textarea", placeholder: "Carry-over items from the last retro, with status.", maxLength: 800 }
       ]
     },
     meeting_agenda: {
       brief: "A focused meeting agenda — objective, timed sections, decisions required, pre-reads.",
       fields: [
-        { id: "meeting_title", label: "Meeting Title", type: "text", placeholder: "e.g. Q2 Roadmap Review", required: true },
+        { id: "meeting_title", label: "Meeting Title", type: "text", placeholder: "e.g. Q2 Roadmap Review", required: true, maxLength: 100 },
         { id: "meeting_date", label: "Meeting Date & Time", type: "datetime-local" },
-        { id: "objective", label: "Objective (one sentence)", type: "textarea", placeholder: "What must be true by the end of this meeting?", required: true },
+        { id: "meeting_type", label: "Meeting Type", type: "select", options: [
+          "Status check-in",
+          "Decision-making",
+          "Planning / kickoff",
+          "Working session",
+          "Steering committee",
+          "Retrospective",
+          "All-hands / town hall"
+        ]},
+        { id: "objective", label: "Objective (one sentence)", type: "textarea", placeholder: "What must be true by the end of this meeting?", required: true, maxLength: 400 },
         { id: "duration", label: "Duration", type: "select", options: [
           "15 min", "30 min", "45 min", "60 min", "90 min", "2+ hours"
         ]},
-        { id: "attendees", label: "Attendees & Roles", type: "textarea", placeholder: "Who's in the room and why?" },
-        { id: "topics", label: "Topics / Decisions to Cover", type: "textarea", placeholder: "Rough list — the agenda will prioritize and time-box." }
+        { id: "attendees", label: "Attendees & Roles", type: "textarea", placeholder: "Who's in the room and why?", maxLength: 1200 },
+        { id: "topics", label: "Topics / Decisions to Cover", type: "textarea", placeholder: "Rough list — the agenda will prioritize and time-box.", maxLength: 1500 },
+        { id: "prereads", label: "Pre-Reads (optional)", type: "textarea", placeholder: "Documents attendees should review beforehand.", maxLength: 600 },
+        { id: "decision_authority", label: "Decision Authority", type: "select", options: [
+          "Consult-only — no decisions made",
+          "Recommendation — escalate to sponsor",
+          "Decision — group can finalize",
+          "Vote / consensus required"
+        ]}
       ]
     },
     comms_plan: {
-      brief: "A communication plan — who needs what info, when, through what channel.",
+      brief: "A communication plan — who needs what info, when, through what channel, with escalation paths.",
       fields: [
-        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. ERP Rollout", required: true },
-        { id: "audiences", label: "Audiences", type: "textarea", placeholder: "Who needs to be informed?\ne.g.\nExec sponsors\nEnd users\nSupport team\nCustomers", required: true },
-        { id: "key_messages", label: "Key Messages / Milestones to Communicate", type: "textarea", placeholder: "e.g. Kickoff, training dates, go-live, post-launch support." },
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. ERP Rollout", required: true, maxLength: 100 },
+        { id: "audiences", label: "Audiences", type: "textarea", placeholder: "Who needs to be informed?\ne.g.\nExec sponsors\nEnd users\nSupport team\nCustomers", required: true, maxLength: 1500 },
+        { id: "key_messages", label: "Key Messages / Milestones to Communicate", type: "textarea", placeholder: "e.g. Kickoff, training dates, go-live, post-launch support.", maxLength: 1500 },
         { id: "launch_date", label: "Launch / Key Date", type: "date" },
-        { id: "duration_months", label: "Campaign Duration (months)", type: "number", placeholder: "e.g. 6" }
+        { id: "duration_months", label: "Campaign Duration (months)", type: "number", placeholder: "e.g. 6", min: 1, max: 60 },
+        { id: "program_phase", label: "Program Phase", type: "select", options: [
+          "Pre-announcement", "Build-up / Awareness", "Launch", "Adoption / Reinforcement", "Sustain / BAU"
+        ]},
+        { id: "regulatory_constraints", label: "Regulatory / Legal Constraints", type: "textarea", placeholder: "Disclosure rules, embargoes, customer-comms approval flows.", maxLength: 600 },
+        { id: "tone_principles", label: "Tone / Voice Principles", type: "textarea", placeholder: "Plain English, jargon-free, formal, friendly, etc.", maxLength: 400 }
       ]
     },
     budget: {
-      brief: "A budget breakdown — categorized costs, contingency, assumptions.",
+      brief: "A budget breakdown — categorized costs, contingency, payment schedule, assumptions.",
       fields: [
-        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Office Relocation", required: true },
-        { id: "total_budget", label: "Total Budget (USD)", type: "number", placeholder: "250000" },
-        { id: "scope_summary", label: "Scope Summary", type: "textarea", placeholder: "What needs to be funded? Main cost drivers.", required: true },
-        { id: "start_date", label: "Budget Start Date", type: "date" },
-        { id: "end_date", label: "Budget End Date", type: "date" },
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Office Relocation", required: true, maxLength: 100 },
+        { id: "total_budget", label: "Total Budget", type: "number", placeholder: "250000", min: 0, max: 1000000000 },
         { id: "currency", label: "Currency", type: "select", options: [
           "USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "PKR", "Other"
+        ]},
+        { id: "scope_summary", label: "Scope Summary", type: "textarea", placeholder: "What needs to be funded? Main cost drivers.", required: true, maxLength: 1500 },
+        { id: "start_date", label: "Budget Start Date", type: "date" },
+        { id: "end_date", label: "Budget End Date", type: "date", compareTo: "start_date", compareOp: "after" },
+        { id: "contingency_pct", label: "Contingency %", type: "number", placeholder: "e.g. 15", min: 0, max: 50 },
+        { id: "funding_source", label: "Funding Source", type: "select", options: [
+          "Operating budget (CAPEX)",
+          "Operating budget (OPEX)",
+          "Project-specific allocation",
+          "Grant / external funding",
+          "Customer-funded",
+          "Mixed"
+        ]},
+        { id: "approval_authority", label: "Approval Authority", type: "text", placeholder: "e.g. CFO / Steering Committee / Sponsor", maxLength: 100 }
+      ]
+    },
+    lessons_learned: {
+      brief: "A lessons learned register — what worked, what didn't, and recommendations for future projects.",
+      fields: [
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Q1 Launch", required: true, maxLength: 100 },
+        { id: "period", label: "Period Covered", type: "text", placeholder: "e.g. Jan–Mar 2026", maxLength: 60 },
+        { id: "objective_recap", label: "Original Objective", type: "textarea", placeholder: "What was this project supposed to achieve?", required: true, maxLength: 800 },
+        { id: "outcomes_summary", label: "Outcomes Delivered", type: "textarea", placeholder: "What was actually delivered, vs the original objective?", required: true, maxLength: 1500 },
+        { id: "went_well", label: "What Went Well", type: "textarea", placeholder: "Be specific — name the practices, tools, or behaviors.", maxLength: 1500 },
+        { id: "went_wrong", label: "What Didn't Go Well", type: "textarea", placeholder: "Honest. Failures, near-misses, friction points.", maxLength: 1500 },
+        { id: "team_size", label: "Team Size", type: "number", placeholder: "5", min: 1, max: 500 },
+        { id: "contributors", label: "Retro Contributors / Roles", type: "textarea", placeholder: "Who contributed observations to this register?", maxLength: 600 }
+      ]
+    },
+    change_request: {
+      brief: "A formal change request for the Change Control Board — impact assessment, options, sign-off.",
+      fields: [
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. CRM Migration", required: true, maxLength: 100 },
+        { id: "change_title", label: "Change Title", type: "text", placeholder: "e.g. Add SSO via Okta", required: true, maxLength: 120 },
+        { id: "requested_by", label: "Requested By (Role)", type: "text", placeholder: "e.g. Head of IT Security", required: true, maxLength: 100 },
+        { id: "request_date", label: "Request Date", type: "date" },
+        { id: "description", label: "Change Description", type: "textarea", placeholder: "What is being changed? Be specific.", required: true, maxLength: 1500 },
+        { id: "rationale", label: "Rationale / Justification", type: "textarea", placeholder: "Why now? Business driver, defect, regulatory need, opportunity.", required: true, maxLength: 1200 },
+        { id: "urgency", label: "Urgency", type: "select", options: [
+          "Low — schedule for next cycle",
+          "Medium — current cycle",
+          "High — within 1–2 weeks",
+          "Critical — emergency"
+        ]},
+        { id: "alternatives", label: "Alternatives Considered", type: "textarea", placeholder: "What other options were evaluated, including 'do nothing'?", maxLength: 1200 },
+        { id: "estimated_impact", label: "Known Impacts (scope/cost/schedule)", type: "textarea", placeholder: "What you already know about the impact.", maxLength: 1200 }
+      ]
+    },
+    issue_log: {
+      brief: "An issue log distinguishing current open issues from closed ones, with resolution paths.",
+      fields: [
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. ERP Rollout", required: true, maxLength: 100 },
+        { id: "project_context", label: "Project Context", type: "textarea", placeholder: "Describe the project and where it is now.", required: true, maxLength: 1500 },
+        { id: "phase", label: "Current Phase", type: "select", options: [
+          "Initiation / Planning", "Execution", "Monitoring & Control", "Closing", "Post-launch / BAU"
+        ]},
+        { id: "team_size", label: "Team Size", type: "number", placeholder: "e.g. 8", min: 1, max: 200 },
+        { id: "known_issues", label: "Known Open Issues", type: "textarea", placeholder: "List the current issues you're already aware of.", required: true, maxLength: 2500 },
+        { id: "recently_resolved", label: "Recently Resolved (optional)", type: "textarea", placeholder: "Issues closed in the last period.", maxLength: 1000 },
+        { id: "escalation_path", label: "Escalation Path", type: "text", placeholder: "e.g. PM → Sponsor → Steering Committee", maxLength: 200 }
+      ]
+    },
+    project_closure: {
+      brief: "A formal project closure report — outcomes vs charter, performance metrics, lessons, sign-off.",
+      fields: [
+        { id: "project_name", label: "Project Name", type: "text", placeholder: "e.g. Payments Platform v2", required: true, maxLength: 100 },
+        { id: "sponsor", label: "Sponsor", type: "text", placeholder: "e.g. CFO Office", maxLength: 100 },
+        { id: "pm_name", label: "Project Manager", type: "text", placeholder: "Your name/role", maxLength: 100 },
+        { id: "start_date", label: "Project Start Date", type: "date" },
+        { id: "end_date", label: "Project End Date (Actual)", type: "date", compareTo: "start_date", compareOp: "after" },
+        { id: "objectives_recap", label: "Original Objectives", type: "textarea", placeholder: "What was the project's original mandate?", required: true, maxLength: 1200 },
+        { id: "outcomes_delivered", label: "Outcomes Delivered", type: "textarea", placeholder: "What was actually delivered? Be specific.", required: true, maxLength: 1500 },
+        { id: "scope_changes", label: "Scope Changes (added/cut)", type: "textarea", placeholder: "What was added via change requests, what was de-scoped.", maxLength: 1200 },
+        { id: "planned_budget", label: "Planned Budget", type: "number", placeholder: "250000", min: 0, max: 1000000000 },
+        { id: "actual_budget", label: "Actual Spend", type: "number", placeholder: "263500", min: 0, max: 1000000000 },
+        { id: "currency", label: "Currency", type: "select", options: [
+          "USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "PKR", "Other"
+        ]},
+        { id: "key_lessons", label: "Top Lessons (optional)", type: "textarea", placeholder: "3–5 bullets — strategic insights worth remembering.", maxLength: 1200 },
+        { id: "closure_status", label: "Closure Status", type: "select", options: [
+          "Successful — fully delivered",
+          "Partially successful — some objectives met",
+          "Closed — incomplete delivery",
+          "Cancelled — terminated mid-flight"
         ]}
       ]
     }
@@ -179,7 +357,11 @@
     retro: "Retrospective",
     meeting_agenda: "Meeting Agenda",
     comms_plan: "Comms Plan",
-    budget: "Budget"
+    budget: "Budget",
+    lessons_learned: "Lessons Learned",
+    change_request: "Change Request",
+    issue_log: "Issue Log",
+    project_closure: "Closure Report"
   };
 
   // ===================================================================
@@ -471,9 +653,14 @@
     schema.fields.forEach(f => {
       const wrap = document.createElement('div');
       wrap.className = 'field';
+      wrap.dataset.fieldId = f.id;
+
       const lab = document.createElement('label');
       lab.setAttribute('for', 'f_' + f.id);
-      lab.innerHTML = f.label + (f.required ? ' <span class="req">*</span>' : '');
+      const counterMarkup = f.maxLength
+        ? ` <span class="char-count" id="cc_${f.id}">0/${f.maxLength}</span>`
+        : '';
+      lab.innerHTML = f.label + (f.required ? ' <span class="req">*</span>' : '') + counterMarkup;
       wrap.appendChild(lab);
 
       let input;
@@ -495,24 +682,120 @@
       input.dataset.key = f.id;
       if (f.placeholder) input.placeholder = f.placeholder;
       if (f.required) input.dataset.required = "1";
+      if (f.maxLength != null) input.maxLength = f.maxLength;
+      if (f.min != null) input.min = f.min;
+      if (f.max != null) input.max = f.max;
+      if (f.compareTo) {
+        input.dataset.compareTo = f.compareTo;
+        input.dataset.compareOp = f.compareOp || 'after';
+      }
       wrap.appendChild(input);
+
+      const err = document.createElement('div');
+      err.className = 'field-error hidden';
+      err.id = 'err_' + f.id;
+      wrap.appendChild(err);
+
+      // live counter + auto-clear errors on typing
+      if (f.maxLength) {
+        const cc = $('cc_' + f.id);
+        const updateCounter = () => {
+          const len = (input.value || '').length;
+          cc.textContent = `${len}/${f.maxLength}`;
+          cc.classList.toggle('near-limit', len >= f.maxLength * 0.9);
+        };
+        input.addEventListener('input', updateCounter);
+      }
+      input.addEventListener('input', () => clearFieldError(f.id));
+      input.addEventListener('change', () => clearFieldError(f.id));
+
       dynWrap.appendChild(wrap);
     });
   }
 
   genSelect.addEventListener('change', renderFields);
 
+  function setFieldError(fieldId, message) {
+    const wrap = dynWrap.querySelector(`[data-field-id="${fieldId}"]`);
+    if (!wrap) return;
+    wrap.classList.add('has-error');
+    const err = $('err_' + fieldId);
+    if (err) {
+      err.textContent = message;
+      err.classList.remove('hidden');
+    }
+  }
+
+  function clearFieldError(fieldId) {
+    const wrap = dynWrap.querySelector(`[data-field-id="${fieldId}"]`);
+    if (!wrap) return;
+    wrap.classList.remove('has-error');
+    const err = $('err_' + fieldId);
+    if (err) {
+      err.textContent = '';
+      err.classList.add('hidden');
+    }
+  }
+
+  function clearAllFieldErrors() {
+    dynWrap.querySelectorAll('.field.has-error').forEach(w => w.classList.remove('has-error'));
+    dynWrap.querySelectorAll('.field-error').forEach(e => {
+      e.textContent = '';
+      e.classList.add('hidden');
+    });
+  }
+
+  function validateField(f, value, allValues) {
+    if (f.required && !value) return `${f.label} is required.`;
+    if (!value) return null;
+    if (f.maxLength && value.length > f.maxLength) {
+      return `Too long — max ${f.maxLength} characters (${value.length}).`;
+    }
+    if (f.type === 'number') {
+      const n = Number(value);
+      if (Number.isNaN(n)) return 'Must be a number.';
+      if (f.min != null && n < f.min) return `Must be at least ${f.min}.`;
+      if (f.max != null && n > f.max) return `Must be at most ${f.max}.`;
+    }
+    if ((f.type === 'date' || f.type === 'datetime-local') && f.compareTo) {
+      const other = (allValues[f.compareTo] || '').trim();
+      if (other) {
+        const a = new Date(value);
+        const b = new Date(other);
+        if (!Number.isNaN(a.getTime()) && !Number.isNaN(b.getTime())) {
+          const op = f.compareOp || 'after';
+          if (op === 'after' && a <= b) return `Must be after the ${f.compareTo.replace(/_/g, ' ')}.`;
+          if (op === 'before' && a >= b) return `Must be before the ${f.compareTo.replace(/_/g, ' ')}.`;
+        }
+      }
+    }
+    if (f.type === 'date' && f.id === 'report_date') {
+      const today = new Date(); today.setHours(23, 59, 59, 999);
+      const d = new Date(value);
+      if (!Number.isNaN(d.getTime()) && d > today) return 'Report date cannot be in the future.';
+    }
+    return null;
+  }
+
   function collectInputs() {
     const schema = SCHEMAS[genSelect.value];
     const inputs = {};
-    const missing = [];
     schema.fields.forEach(f => {
       const el = $('f_' + f.id);
-      const v = (el.value || '').trim();
-      inputs[f.id] = v;
-      if (f.required && !v) missing.push(f.label);
+      inputs[f.id] = (el.value || '').trim();
     });
-    return { inputs, missing, type: genSelect.value };
+
+    clearAllFieldErrors();
+    const errors = [];
+    schema.fields.forEach(f => {
+      const msg = validateField(f, inputs[f.id], inputs);
+      if (msg) {
+        setFieldError(f.id, msg);
+        errors.push({ id: f.id, label: f.label, msg });
+      }
+    });
+
+    return { inputs, errors, type: genSelect.value };
   }
 
   // ===================================================================
@@ -538,13 +821,16 @@
       return;
     }
 
-    list.innerHTML = state.artifacts.map(a => `
+    list.innerHTML = state.artifacts.map(a => {
+      const revTag = a.revision && a.revision > 1 ? ` · v${a.revision}` : '';
+      return `
       <div class="archive-item ${state.activeArtifact?.id === a.id ? 'active' : ''}" data-id="${a.id}">
-        <div class="a-type">${TYPE_LABEL[a.artifact_type] || a.artifact_type}</div>
+        <div class="a-type">${TYPE_LABEL[a.artifact_type] || a.artifact_type}${revTag}</div>
         <div class="a-title">${escapeHtml(a.title)}</div>
         <div class="a-date">${formatDate(a.created_at)}</div>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     list.querySelectorAll('.archive-item').forEach(el => {
       el.addEventListener('click', () => openArtifact(Number(el.dataset.id)));
@@ -568,7 +854,10 @@
         // populate fields from saved inputs (best-effort)
         Object.entries(artifact.inputs || {}).forEach(([k, v]) => {
           const el = $('f_' + k);
-          if (el) el.value = v;
+          if (el) {
+            el.value = v;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          }
         });
         missionText.textContent = SCHEMAS[artifact.artifact_type].brief;
       }
@@ -595,9 +884,13 @@
   const deployBtn = $('deploy-btn');
 
   async function deploy() {
-    const { inputs, missing, type } = collectInputs();
-    if (missing.length) {
-      renderError('Missing required fields:\n• ' + missing.join('\n• '));
+    const { inputs, errors, type } = collectInputs();
+    if (errors.length) {
+      const summary = errors.map(e => `${e.label}: ${e.msg}`).join('\n');
+      renderError(`Please fix ${errors.length} field${errors.length === 1 ? '' : 's'}:\n${summary}`);
+      // scroll to the first error
+      const firstWrap = dynWrap.querySelector('.field.has-error');
+      if (firstWrap) firstWrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -612,7 +905,8 @@
         body: JSON.stringify({
           artifact_type: type,
           title: inferTitle(type, inputs),
-          inputs
+          inputs,
+          methodology: getMethodology() || undefined
         })
       });
       state.activeArtifact = artifact;
@@ -774,6 +1068,7 @@
     await renderMermaid(outputBody);
 
     showOutputActions();
+    loadRevisions(artifact);
   }
 
   async function renderMermaid(root) {
@@ -801,7 +1096,10 @@
     const dateStr = d.toISOString().slice(0, 10);
     const user = state.user?.email || 'unknown';
     const userShort = user.split('@')[0];
-    const rev = `A-${String(artifact.id).padStart(3, '0')}`;
+    const idTag = `A-${String(artifact.id).padStart(3, '0')}`;
+    const rev = artifact.revision && artifact.revision > 1
+      ? `${idTag} · v${artifact.revision}`
+      : idTag;
     return `
       <div class="title-block">
         <div class="cell highlight">
@@ -827,14 +1125,43 @@
       </div>`;
   }
 
+  // Populate the revisions dropdown for the active artifact's chain.
+  async function loadRevisions(artifact) {
+    const sel = $('revisions-select');
+    sel.innerHTML = '';
+    sel.classList.add('hidden');
+    if (!artifact || !artifact.id) return;
+    try {
+      const { revisions } = await api(`/api/artifacts/${artifact.id}/revisions`);
+      if (!revisions || revisions.length < 2) return;
+      sel.innerHTML = revisions.map(r => {
+        const label = `v${r.revision}` + (r.revision === 1 ? ' · original' : '');
+        const isSelected = r.id === artifact.id ? ' selected' : '';
+        return `<option value="${r.id}"${isSelected}>${label}</option>`;
+      }).join('');
+      sel.classList.remove('hidden');
+    } catch (err) {
+      console.warn('failed to load revisions', err);
+    }
+  }
+
+  $('revisions-select').addEventListener('change', (e) => {
+    const id = Number(e.target.value);
+    if (Number.isInteger(id) && id !== state.activeArtifact?.id) openArtifact(id);
+  });
+
   function showOutputActions() {
     $('copy-btn').classList.remove('hidden');
     $('edit-btn').classList.remove('hidden');
     $('download-btn').classList.remove('hidden');
+    $('refine-btn').classList.remove('hidden');
   }
 
   function hideOutputActions() {
-    ['copy-btn', 'edit-btn', 'download-btn'].forEach(id => $(id).classList.add('hidden'));
+    ['copy-btn', 'edit-btn', 'download-btn', 'refine-btn'].forEach(id => $(id).classList.add('hidden'));
+    const sel = $('revisions-select');
+    sel.classList.add('hidden');
+    sel.innerHTML = '';
   }
 
   function openEditor() {
@@ -910,6 +1237,74 @@
   // edit
   $('edit-btn').addEventListener('click', openEditor);
 
+  // ===================================================================
+  // REFINE (revisions)
+  // ===================================================================
+  const refineModal = $('refine-modal');
+  const refineInstructions = $('refine-instructions');
+  const refineSubmit = $('refine-submit');
+
+  function openRefine() {
+    if (!state.activeArtifact) return;
+    const a = state.activeArtifact;
+    const label = TYPE_LABEL[a.artifact_type] || a.artifact_type;
+    const v = a.revision && a.revision > 1 ? ` · v${a.revision}` : '';
+    $('refine-context').textContent = `${label}: ${a.title}${v}`;
+    refineInstructions.value = '';
+    refineModal.classList.remove('hidden');
+    setTimeout(() => refineInstructions.focus(), 50);
+  }
+
+  function closeRefine() {
+    refineModal.classList.add('hidden');
+  }
+
+  $('refine-btn').addEventListener('click', openRefine);
+  $('refine-close').addEventListener('click', closeRefine);
+  $('refine-cancel').addEventListener('click', closeRefine);
+  refineModal.querySelector('.modal-backdrop').addEventListener('click', closeRefine);
+
+  refineSubmit.addEventListener('click', async () => {
+    const instructions = refineInstructions.value.trim();
+    if (!instructions) {
+      toast('Please describe what to change', 'error');
+      return;
+    }
+    if (!state.activeArtifact) return;
+
+    refineSubmit.disabled = true;
+    refineSubmit.textContent = 'Drafting…';
+    const sourceId = state.activeArtifact.id;
+
+    try {
+      const { artifact } = await api(`/api/artifacts/${sourceId}/revise`, {
+        method: 'POST',
+        body: JSON.stringify({
+          instructions,
+          methodology: getMethodology() || undefined
+        })
+      });
+      state.activeArtifact = artifact;
+      state.artifacts.unshift({
+        id: artifact.id,
+        artifact_type: artifact.artifact_type,
+        title: artifact.title,
+        parent_id: artifact.parent_id,
+        revision: artifact.revision,
+        created_at: artifact.created_at
+      });
+      renderArchive();
+      await renderOutput(artifact);
+      closeRefine();
+      toast(`Revision v${artifact.revision} saved`);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      refineSubmit.disabled = false;
+      refineSubmit.textContent = '▸ Generate Revision';
+    }
+  });
+
 
   // export artifact
   const downloadBtn = $('download-btn');
@@ -958,7 +1353,11 @@
     'retro': ['markdown', 'excel', 'csv', 'generic', 'confluence', 'googlesheets'],
     'meeting_agenda': ['markdown', 'excel', 'csv', 'generic', 'confluence', 'notion'],
     'comms_plan': ['markdown', 'excel', 'csv', 'generic', 'confluence', 'googlesheets', 'notion'],
-    'budget': ['markdown', 'excel', 'csv', 'generic', 'googlesheets']
+    'budget': ['markdown', 'excel', 'csv', 'generic', 'googlesheets'],
+    'lessons_learned': ['markdown', 'excel', 'csv', 'generic', 'confluence', 'googlesheets', 'notion'],
+    'change_request': ['markdown', 'excel', 'csv', 'generic', 'confluence', 'jira', 'azure'],
+    'issue_log': ['markdown', 'excel', 'csv', 'generic', 'confluence', 'googlesheets', 'jira', 'azure', 'linear'],
+    'project_closure': ['markdown', 'excel', 'generic', 'confluence', 'notion']
   };
 
   // Tool descriptions
@@ -1155,6 +1554,24 @@
   // MERMAID INIT (theme-aware)
   // ===================================================================
   // Mermaid is initialized by the theme switcher with theme-appropriate colors
+
+  // ===================================================================
+  // METHODOLOGY TOGGLE
+  // ===================================================================
+  const methodologySelect = $('methodology-select');
+  if (methodologySelect) {
+    methodologySelect.value = getMethodology();
+    methodologySelect.addEventListener('change', () => {
+      const v = methodologySelect.value;
+      if (v && VALID_METHODOLOGIES.includes(v)) {
+        localStorage.setItem(METHODOLOGY_KEY, v);
+        toast(`Methodology set to ${v}`);
+      } else {
+        localStorage.removeItem(METHODOLOGY_KEY);
+        toast('Methodology cleared');
+      }
+    });
+  }
 
   // ===================================================================
   // BOOT
