@@ -11,6 +11,7 @@ const fs = require("fs");
 
 const { pool, initDb } = require("./db");
 const { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES } = require("./prompts");
+const { runClaudeCli, checkClaudeCli } = require("./cli");
 
 function normalizeMethodology(m) {
   if (typeof m !== "string") return null;
@@ -144,9 +145,14 @@ app.get("/api/config", async (req, res) => {
 app.post("/api/config", async (req, res) => {
   const { provider, model, api_key } = req.body || {};
 
-  if (!provider || !model || !api_key) {
-    return res.status(400).json({ error: "provider, model, and api_key required" });
+  if (!provider || !model) {
+    return res.status(400).json({ error: "provider and model required" });
   }
+  // claude-cli uses subscription OAuth via `claude /login`, no API key needed
+  if (provider !== "claude-cli" && !api_key) {
+    return res.status(400).json({ error: "api_key required for this provider" });
+  }
+  const storedKey = provider === "claude-cli" ? "" : api_key;
 
   try {
     const { rows } = await pool.query(
@@ -157,12 +163,12 @@ app.post("/api/config", async (req, res) => {
       await pool.query(
         `UPDATE llm_config SET provider = $1, model = $2, api_key = $3, updated_at = NOW()
          WHERE id = $4`,
-        [provider, model, api_key, rows[0].id]
+        [provider, model, storedKey, rows[0].id]
       );
     } else {
       await pool.query(
         `INSERT INTO llm_config (provider, model, api_key) VALUES ($1, $2, $3)`,
-        [provider, model, api_key]
+        [provider, model, storedKey]
       );
     }
 
@@ -237,6 +243,13 @@ app.post("/api/config/test", async (req, res) => {
   }
 });
 
+// Check whether the Claude CLI is installed and authenticated inside the
+// backend container. Used by the settings modal when provider=claude-cli.
+app.get("/api/config/cli/status", authRequired, async (_req, res) => {
+  const status = await checkClaudeCli();
+  res.json(status);
+});
+
 app.post("/api/config/restart", async (req, res) => {
   res.json({ ok: true, message: "backend restarting..." });
   setTimeout(() => process.exit(0), 500);
@@ -290,7 +303,7 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
     const provider = configExists ? configRow.rows[0].provider : "claude";
     const model = configExists ? configRow.rows[0].model : "claude-sonnet-4-20250514";
 
-    if (!apiKey) {
+    if (provider !== "claude-cli" && !apiKey) {
       return res.status(500).json({ error: "LLM API key not configured" });
     }
 
@@ -300,7 +313,14 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
     // Call LLM based on provider
     let llmResp, llmData, content;
 
-    if (provider === "claude") {
+    if (provider === "claude-cli") {
+      try {
+        content = await runClaudeCli({ userMsg: extractionPrompt, model });
+      } catch (err) {
+        console.error("[extract] Claude CLI error:", err.message);
+        return res.status(500).json({ error: err.message });
+      }
+    } else if (provider === "claude") {
       llmResp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -1387,6 +1407,17 @@ async function resolveLlmConfig() {
 // Call the configured LLM with a system + user message and return the text content.
 // Returns { ok: true, content } or { ok: false, status, error, detail }.
 async function callLLM({ provider, model, apiKey, systemPrompt, userMsg, maxTokens = 2500 }) {
+  // Claude CLI takes a separate code path — subprocess instead of HTTP.
+  if (provider === "claude-cli") {
+    try {
+      const content = await runClaudeCli({ systemPrompt, userMsg, model });
+      if (!content) return { ok: false, status: 502, error: "claude-cli returned empty output" };
+      return { ok: true, content };
+    } catch (err) {
+      return { ok: false, status: 502, error: err.message || "claude-cli failed" };
+    }
+  }
+
   let resp;
   try {
     if (provider === "claude") {
@@ -1601,8 +1632,17 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
   }
 
   let llmResp, llmData;
+  let cliContent = null;
 
-  if (provider === "claude") {
+  if (provider === "claude-cli") {
+    try {
+      cliContent = await runClaudeCli({ systemPrompt: SYSTEM_PROMPT, userMsg, model });
+      if (!cliContent) return res.status(502).json({ error: "claude-cli returned empty output" });
+    } catch (err) {
+      console.error("[claude-cli error]", err.message);
+      return res.status(502).json({ error: err.message });
+    }
+  } else if (provider === "claude") {
     try {
       llmResp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -1712,7 +1752,9 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
   }
 
   let content = "";
-  if (provider === "claude") {
+  if (provider === "claude-cli") {
+    content = cliContent;
+  } else if (provider === "claude") {
     content = (llmData.content || [])
       .filter((b) => b.type === "text")
       .map((b) => b.text)

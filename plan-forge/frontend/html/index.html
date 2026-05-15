@@ -150,7 +150,8 @@
         <div class="form-section">
           <label for="config-provider">LLM Provider <span class="req">*</span></label>
           <select id="config-provider">
-            <option value="claude">Claude (Anthropic)</option>
+            <option value="claude">Claude (Anthropic API)</option>
+            <option value="claude-cli">Claude CLI (subscription, no API key)</option>
             <option value="openai">ChatGPT (OpenAI)</option>
             <option value="gemini">Gemini (Google)</option>
           </select>
@@ -162,11 +163,26 @@
             <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
           </select>
 
-          <label for="config-api-key">API Key <span class="req">*</span></label>
-          <input type="password" id="config-api-key" placeholder="Enter your API key" />
-          <small style="color: var(--paper-dim); display: block; margin-top: 4px;">
-            Your API key is stored securely and only used by the backend.
-          </small>
+          <div id="config-api-key-row">
+            <label for="config-api-key">API Key <span class="req">*</span></label>
+            <input type="password" id="config-api-key" placeholder="Enter your API key" />
+            <small style="color: var(--paper-dim); display: block; margin-top: 4px;">
+              Your API key is stored securely and only used by the backend.
+            </small>
+          </div>
+
+          <div id="config-cli-row" class="hidden" style="margin-top: 12px; padding: 12px; border: 1px dashed var(--cyan); border-radius: 6px; background: rgba(125,211,252,0.05);">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-weight: 600; color: var(--paper);">Claude CLI Status</span>
+              <span id="cli-status-badge" style="font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--ghost); color: var(--ink-deep);">unknown</span>
+            </div>
+            <p style="color: var(--paper-dim); font-size: 12px; margin: 6px 0 10px;">
+              The Claude CLI is installed in the backend container. Authenticate it once with your
+              Claude subscription via this command on the host machine:
+            </p>
+            <code style="display: block; padding: 8px 10px; background: var(--ink-deep); color: var(--cyan); font-size: 12px; border-radius: 4px; margin-bottom: 8px;">docker compose exec backend claude /login</code>
+            <small id="cli-status-detail" style="color: var(--paper-dim); display: block; margin-top: 4px;">Click "Check CLI Status" to verify.</small>
+          </div>
 
           <div style="margin-top: 16px; display: flex; gap: 8px;">
             <button class="btn btn-sm" id="config-test-btn">Test Connection</button>

@@ -525,6 +525,12 @@
       { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4 (Latest)' },
       { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' }
     ],
+    'claude-cli': [
+      { value: '', label: 'CLI default (recommended)' },
+      { value: 'claude-opus-4-1', label: 'Claude Opus 4.1' },
+      { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+      { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' }
+    ],
     openai: [
       { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
       { value: 'gpt-4', label: 'GPT-4' },
@@ -543,6 +549,36 @@
     configModel.innerHTML = options.map(opt =>
       `<option value="${opt.value}">${opt.label}</option>`
     ).join('');
+    // Show/hide API key vs CLI status panels based on provider
+    const apiKeyRow = $('config-api-key-row');
+    const cliRow = $('config-cli-row');
+    if (provider === 'claude-cli') {
+      apiKeyRow.classList.add('hidden');
+      cliRow.classList.remove('hidden');
+      configTestBtn.textContent = 'Check CLI Status';
+    } else {
+      apiKeyRow.classList.remove('hidden');
+      cliRow.classList.add('hidden');
+      configTestBtn.textContent = 'Test Connection';
+    }
+  }
+
+  function setCliStatusBadge(state, detail) {
+    const badge = $('cli-status-badge');
+    const detailEl = $('cli-status-detail');
+    const map = {
+      unknown:        { text: 'unknown',           color: 'var(--ghost)' },
+      checking:       { text: 'checking…',         color: 'var(--cyan)' },
+      ok:             { text: '✓ authenticated',   color: 'var(--green)' },
+      not_installed:  { text: '✗ not installed',   color: 'var(--red)' },
+      not_authed:     { text: '⚠ not logged in',   color: 'var(--amber)' },
+      error:          { text: '✗ error',           color: 'var(--red)' },
+    };
+    const cfg = map[state] || map.unknown;
+    badge.textContent = cfg.text;
+    badge.style.background = cfg.color;
+    badge.style.color = state === 'unknown' || state === 'checking' ? 'var(--ink-deep)' : 'var(--ink-deep)';
+    if (detail) detailEl.textContent = detail;
   }
 
   async function loadConfig() {
@@ -552,6 +588,11 @@
       updateModelOptions();
       configModel.value = config.model || 'claude-sonnet-4-20250514';
       configApiKey.value = '';
+      // If claude-cli is already the active provider, auto-check status so the
+      // user sees the current state without having to click the button.
+      if (config.provider === 'claude-cli') {
+        configTestBtn.click();
+      }
     } catch (err) {
       toast('Failed to load config: ' + err.message, 'error');
     }
@@ -580,8 +621,38 @@
 
   configTestBtn.addEventListener('click', async () => {
     const provider = configProvider.value;
-    const apiKey = configApiKey.value.trim();
 
+    if (provider === 'claude-cli') {
+      // Different flow: query the backend's CLI health endpoint
+      configTestBtn.disabled = true;
+      setCliStatusBadge('checking', 'Asking the backend container…');
+      configTestStatus.textContent = '';
+      try {
+        const status = await api('/api/config/cli/status');
+        if (status.authenticated) {
+          setCliStatusBadge('ok', `Ready. CLI replied: "${(status.response || '').slice(0, 80)}"`);
+          configTestStatus.textContent = '✓ CLI ready';
+          configTestStatus.style.color = 'var(--green)';
+        } else if (!status.installed) {
+          setCliStatusBadge('not_installed', status.error || 'Binary not found in container. Rebuild backend.');
+          configTestStatus.textContent = '✗ Not installed';
+          configTestStatus.style.color = 'var(--red)';
+        } else {
+          setCliStatusBadge('not_authed', status.error || 'Run `claude /login` inside the backend container.');
+          configTestStatus.textContent = '⚠ Not logged in';
+          configTestStatus.style.color = 'var(--amber)';
+        }
+      } catch (err) {
+        setCliStatusBadge('error', err.message);
+        configTestStatus.textContent = '✗ Check failed';
+        configTestStatus.style.color = 'var(--red)';
+      } finally {
+        configTestBtn.disabled = false;
+      }
+      return;
+    }
+
+    const apiKey = configApiKey.value.trim();
     if (!apiKey) {
       configTestStatus.textContent = 'API key required';
       configTestStatus.style.color = 'var(--red)';
@@ -613,7 +684,7 @@
     const model = configModel.value;
     const apiKey = configApiKey.value.trim();
 
-    if (!apiKey) {
+    if (provider !== 'claude-cli' && !apiKey) {
       toast('API key is required', 'error');
       return;
     }
@@ -622,9 +693,11 @@
     configTestBtn.disabled = true;
 
     try {
+      const body = { provider, model };
+      if (provider !== 'claude-cli') body.api_key = apiKey;
       await api('/api/config', {
         method: 'POST',
-        body: JSON.stringify({ provider, model, api_key: apiKey })
+        body: JSON.stringify(body)
       });
       toast('Configuration saved. Backend restarting…');
       settingsModal.classList.add('hidden');

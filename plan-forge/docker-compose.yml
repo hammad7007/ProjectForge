@@ -28,6 +28,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       PORT: "4000"
       NODE_ENV: production
+    volumes:
+      # Persist Claude CLI auth (~/.claude, ~/.claude.json) across rebuilds
+      # so `docker compose exec backend claude /login` only needs to run once.
+      - claude_home:/root
     depends_on:
       db:
         condition: service_healthy
@@ -47,6 +51,7 @@ services:
 
 volumes:
   pgdata:
+  claude_home:
 
 networks:
   forgenet:
