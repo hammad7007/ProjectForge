@@ -937,6 +937,56 @@
     uploadFileInput.click();
   });
 
+  function matchSelectOption(selectEl, value) {
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const opts = Array.from(selectEl.options).map(o => o.value);
+    const exact = opts.find(o => o === raw);
+    if (exact) return exact;
+    const ci = opts.find(o => o.toLowerCase() === raw.toLowerCase());
+    if (ci) return ci;
+    const lower = raw.toLowerCase();
+    const sub = opts.find(o => o.toLowerCase().includes(lower) || lower.includes(o.toLowerCase()));
+    return sub || null;
+  }
+
+  function coerceForInput(inputType, value) {
+    if (value == null) return '';
+    const s = String(value).trim();
+    if (!s) return '';
+    if (inputType === 'number') {
+      // strip currency symbols, commas, units — keep digits, dot, minus
+      const cleaned = s.replace(/[^\d.\-]/g, '');
+      return cleaned;
+    }
+    if (inputType === 'date') {
+      // already YYYY-MM-DD?
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return '';
+    }
+    if (inputType === 'datetime-local') {
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s.slice(0, 16);
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mi = String(d.getMinutes()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+      }
+      return '';
+    }
+    return s;
+  }
+
   uploadFileInput.addEventListener('change', async () => {
     const file = uploadFileInput.files[0];
     if (!file) return;
@@ -958,25 +1008,48 @@
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Extraction failed');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Extraction failed (HTTP ${res.status})`);
       }
 
       const { fields } = await res.json();
 
-      // Populate form fields
       let filled = 0;
-      Object.entries(fields).forEach(([key, value]) => {
-        const el = $('f_' + key);
-        if (el && value) {
-          el.value = value;
-          filled++;
+      let skipped = 0;
+      Object.entries(fields || {}).forEach(([key, value]) => {
+        const el = document.getElementById('f_' + key);
+        if (!el || value == null || String(value).trim() === '') return;
+
+        let toAssign;
+        if (el.tagName === 'SELECT') {
+          toAssign = matchSelectOption(el, value);
+          if (!toAssign) { skipped++; return; }
+        } else {
+          toAssign = coerceForInput(el.type, value);
+          if (!toAssign) { skipped++; return; }
+          // respect maxLength so we don't trip char counters
+          if (el.maxLength > 0 && toAssign.length > el.maxLength) {
+            toAssign = toAssign.slice(0, el.maxLength);
+          }
         }
+
+        el.value = toAssign;
+        // fire input + change so char counters and validators update
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled++;
       });
 
-      uploadHint.textContent = `✓ Filled ${filled} field${filled !== 1 ? 's' : ''} from ${file.name}`;
-      uploadHint.style.color = 'var(--green)';
-      toast(`Auto-filled ${filled} field${filled !== 1 ? 's' : ''} from document`);
+      const skippedNote = skipped > 0 ? ` (${skipped} skipped — no good match)` : '';
+      if (filled === 0) {
+        uploadHint.textContent = `⚠ Read ${file.name} but nothing matched the form fields${skippedNote}`;
+        uploadHint.style.color = 'var(--amber)';
+        toast('Document read, but no fields could be auto-filled', 'error');
+      } else {
+        uploadHint.textContent = `✓ Filled ${filled} field${filled !== 1 ? 's' : ''} from ${file.name}${skippedNote}`;
+        uploadHint.style.color = 'var(--green)';
+        toast(`Auto-filled ${filled} field${filled !== 1 ? 's' : ''} from document`);
+      }
     } catch (err) {
       uploadHint.textContent = '✗ ' + err.message;
       uploadHint.style.color = 'var(--red)';

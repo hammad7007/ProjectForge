@@ -10,7 +10,7 @@ const path = require("path");
 const fs = require("fs");
 
 const { pool, initDb } = require("./db");
-const { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, VALID_TYPES, VALID_METHODOLOGIES } = require("./prompts");
+const { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES } = require("./prompts");
 
 function normalizeMethodology(m) {
   if (typeof m !== "string") return null;
@@ -59,88 +59,6 @@ function authRequired(req, res, next) {
 
 function isValidEmail(s) {
   return typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-}
-
-// ------- extraction schemas -------
-const EXTRACT_SCHEMAS = {
-  project_plan: [
-    { id: "project_name", label: "Project Name", hint: "name of the project" },
-    { id: "objective", label: "Objective", hint: "main goal or purpose" },
-    { id: "scope", label: "Scope", hint: "what is included" },
-    { id: "constraints", label: "Constraints", hint: "budget, timeline, or constraints" }
-  ],
-  timeline: [
-    { id: "project_name", label: "Project Name", hint: "name of the project" },
-    { id: "start_date", label: "Start Date", hint: "YYYY-MM-DD format" },
-    { id: "end_date", label: "End Date", hint: "YYYY-MM-DD format" },
-    { id: "phases", label: "Phases", hint: "project phases or stages" },
-    { id: "deliverables", label: "Deliverables", hint: "major milestones" }
-  ],
-  wbs: [
-    { id: "project_name", label: "Project Name", hint: "name or deliverable" },
-    { id: "scope", label: "Scope", hint: "what is being built" },
-    { id: "known_components", label: "Workstreams", hint: "main components" }
-  ],
-  risk_register: [
-    { id: "project_context", label: "Project Context", hint: "project description" },
-    { id: "known_risks", label: "Risks", hint: "identified risks or concerns" }
-  ],
-  raci: [
-    { id: "project_name", label: "Project Name", hint: "name of the project" },
-    { id: "activities", label: "Activities", hint: "activities or decisions" },
-    { id: "roles", label: "Roles", hint: "roles involved" }
-  ],
-  status_report: [
-    { id: "project_name", label: "Project Name", hint: "name of the project" },
-    { id: "accomplishments", label: "Accomplishments", hint: "work completed" },
-    { id: "blockers", label: "Blockers", hint: "risks or blockers" }
-  ],
-  stakeholder_map: [
-    { id: "project_context", label: "Project Context", hint: "project description" },
-    { id: "known_stakeholders", label: "Stakeholders", hint: "stakeholder list" }
-  ],
-  sprint_plan: [
-    { id: "team_name", label: "Team Name", hint: "team or product name" },
-    { id: "sprint_goal", label: "Sprint Goal", hint: "sprint objective" },
-    { id: "backlog", label: "Backlog", hint: "user stories or tasks" }
-  ],
-  retro: [
-    { id: "name", label: "Project/Sprint Name", hint: "name of retrospective" },
-    { id: "outcomes", label: "Outcomes", hint: "what happened or results" }
-  ],
-  meeting_agenda: [
-    { id: "meeting_title", label: "Meeting Title", hint: "meeting name" },
-    { id: "objective", label: "Objective", hint: "meeting purpose" },
-    { id: "topics", label: "Topics", hint: "discussion topics" }
-  ],
-  comms_plan: [
-    { id: "project_name", label: "Project Name", hint: "project name" },
-    { id: "audiences", label: "Audiences", hint: "target audiences" },
-    { id: "key_messages", label: "Messages", hint: "key messages to communicate" }
-  ],
-  budget: [
-    { id: "project_name", label: "Project Name", hint: "project name" },
-    { id: "scope_summary", label: "Scope", hint: "what needs to be funded" },
-    { id: "total_budget", label: "Total Budget", hint: "budget amount in USD" }
-  ]
-};
-
-function buildExtractionPrompt(artifactType, schema, rawText) {
-  const fieldList = schema.map(f => `- "${f.id}": ${f.label} (${f.hint})`).join("\n");
-  return `You are extracting structured project management data from a document.
-
-Document content:
----
-${rawText}
----
-
-Extract the following fields for a "${artifactType}" artifact. Return ONLY valid JSON with these exact keys. If a field cannot be found, return an empty string "".
-
-Fields to extract:
-${fieldList}
-
-Respond with ONLY a JSON object with no markdown formatting, like:
-{"field_id": "extracted value", "field_id2": "value2"}`;
 }
 
 // ------- health -------
@@ -331,7 +249,7 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
 
   if (!file) return res.status(400).json({ error: "no file provided" });
   if (!artifact_type) return res.status(400).json({ error: "artifact_type required" });
-  if (!EXTRACT_SCHEMAS[artifact_type]) {
+  if (!EXTRACT_FIELDS[artifact_type]) {
     return res.status(400).json({ error: `unsupported artifact type: ${artifact_type}` });
   }
 
@@ -339,7 +257,6 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
     let rawText = "";
     const ext = path.extname(file.originalname).toLowerCase();
 
-    // Extract text based on file type
     if (ext === ".pdf") {
       const data = await pdfParse(file.buffer);
       rawText = data.text;
@@ -352,15 +269,16 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
         return xlsx.utils.sheet_to_csv(wb.Sheets[name]);
       }).join("\n\n");
     } else {
-      // .csv, .txt, .md, etc
+      // .csv, .txt, .md, and anything else — best-effort UTF-8
       rawText = file.buffer.toString("utf-8");
     }
 
-    // Truncate to avoid token limits
-    rawText = rawText.slice(0, 8000);
+    rawText = rawText.slice(0, 12000);
 
     if (!rawText.trim()) {
-      return res.status(422).json({ error: "could not extract text from file" });
+      return res.status(422).json({
+        error: `could not extract text from "${file.originalname}" — if this is a scanned/image PDF, OCR isn't supported yet. Try a text-based PDF, Word, Excel, or plain text file.`
+      });
     }
 
     // Get LLM config
@@ -376,9 +294,8 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
       return res.status(500).json({ error: "LLM API key not configured" });
     }
 
-    // Build extraction prompt
-    const schema = EXTRACT_SCHEMAS[artifact_type];
-    const extractionPrompt = buildExtractionPrompt(artifact_type, schema, rawText);
+    // Build extraction prompt from the shared field catalog
+    const extractionPrompt = buildExtractionPrompt(artifact_type, rawText);
 
     // Call LLM based on provider
     let llmResp, llmData, content;
@@ -393,7 +310,7 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
         },
         body: JSON.stringify({
           model: model,
-          max_tokens: 1000,
+          max_tokens: 2000,
           messages: [{ role: "user", content: extractionPrompt }],
         }),
       });
@@ -419,7 +336,7 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
         },
         body: JSON.stringify({
           model: model,
-          max_tokens: 1000,
+          max_tokens: 2000,
           messages: [{ role: "user", content: extractionPrompt }],
         }),
       });
@@ -444,7 +361,7 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: extractionPrompt }] }],
-            generationConfig: { maxOutputTokens: 1000 },
+            generationConfig: { maxOutputTokens: 2000 },
           }),
         }
       );
@@ -470,13 +387,22 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
       return res.status(422).json({ error: "extraction returned no data" });
     }
 
-    // Parse JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    // Strip markdown code fences if the model wrapped its response
+    const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return res.status(422).json({ error: "could not parse extraction response" });
+      console.error("[extract] no JSON in response:", cleaned.slice(0, 500));
+      return res.status(422).json({ error: "model did not return JSON — please try again" });
     }
 
-    const fields = JSON.parse(jsonMatch[0]);
+    let fields;
+    try {
+      fields = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      console.error("[extract] JSON parse error:", parseErr.message, "raw:", jsonMatch[0].slice(0, 500));
+      return res.status(422).json({ error: "could not parse extraction response as JSON" });
+    }
+
     res.json({ fields });
   } catch (err) {
     console.error("[extract]", err);

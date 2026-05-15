@@ -416,6 +416,226 @@ If approval_authority was provided, name them as the formal approver and note th
 A short table: Period | Planned Spend | Cumulative | Notes. Cover the project duration in monthly or quarterly buckets. Surface any large lumpy payments (vendor milestones, license renewals).`,
 };
 
+// Field catalog used by the document-upload auto-fill flow.
+// Mirrors the frontend SCHEMAS in plan-forge/frontend/html/app.js — keep in sync.
+// Each field: { id, label, type, options?, hint? }. Types map to HTML input types.
+const EXTRACT_FIELDS = {
+  project_plan: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "sponsor", label: "Project Sponsor (Name & Role)", type: "text" },
+    { id: "objective", label: "Objective / Business Goal", type: "textarea" },
+    { id: "scope", label: "Scope (what's in)", type: "textarea" },
+    { id: "out_of_scope", label: "Out of Scope", type: "textarea" },
+    { id: "success_metrics", label: "Success Metrics / KPIs", type: "textarea" },
+    { id: "duration", label: "Target Duration", type: "select", options: ["Under 1 month", "1–3 months", "3–6 months", "6–12 months", "Over 12 months"] },
+    { id: "team_size", label: "Team Size", type: "number" },
+    { id: "budget_envelope", label: "Approximate Budget Envelope (USD)", type: "number" },
+    { id: "risk_appetite", label: "Risk Appetite", type: "select", options: ["Low — must avoid surprises", "Medium — balanced", "High — speed over certainty"] },
+    { id: "constraints", label: "Constraints / Non-Negotiables", type: "textarea" }
+  ],
+  timeline: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "start_date", label: "Start Date", type: "date" },
+    { id: "end_date", label: "Target End Date", type: "date" },
+    { id: "team_capacity", label: "Team Capacity (FTE)", type: "number" },
+    { id: "phases", label: "Known Phases", type: "textarea" },
+    { id: "deliverables", label: "Major Deliverables / Milestones", type: "textarea" },
+    { id: "external_dependencies", label: "External Dependencies", type: "textarea" },
+    { id: "buffer_strategy", label: "Schedule Buffer Strategy", type: "select", options: ["Fixed buffer — 10–15% per phase", "Critical-chain buffer — pooled at end", "No formal buffer — best-case planning", "Iterative — re-baseline each cycle"] }
+  ],
+  wbs: [
+    { id: "project_name", label: "Project / Deliverable", type: "text" },
+    { id: "scope", label: "What are we building?", type: "textarea" },
+    { id: "depth", label: "Breakdown Depth", type: "select", options: ["2 levels (workstreams → tasks)", "3 levels (workstreams → tasks → subtasks)", "4 levels (detailed for execution)"] },
+    { id: "estimation_method", label: "Estimation Method", type: "select", options: ["Expert judgment", "Analogous (similar past projects)", "Parametric (per-unit)", "Three-point (PERT: O/M/P)", "Story points", "T-shirt sizing"] },
+    { id: "assumed_team_size", label: "Assumed Team Size", type: "number" },
+    { id: "known_components", label: "Known Workstreams", type: "textarea" },
+    { id: "constraints", label: "Hard Constraints", type: "textarea" }
+  ],
+  risk_register: [
+    { id: "project_context", label: "Project Context", type: "textarea" },
+    { id: "phase", label: "Current Phase", type: "select", options: ["Initiation / Planning", "Execution", "Monitoring", "Closing", "Ongoing / BAU"] },
+    { id: "industry", label: "Industry / Domain", type: "text" },
+    { id: "team_size", label: "Team Size", type: "number" },
+    { id: "known_risks", label: "Known Concerns", type: "textarea" },
+    { id: "appetite", label: "Risk Appetite", type: "select", options: ["Low — must avoid surprises", "Medium — balanced", "High — moving fast, some risk acceptable"] },
+    { id: "compliance_context", label: "Compliance / Regulatory Context", type: "textarea" }
+  ],
+  raci: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "activities", label: "Activities / Decisions (one per line)", type: "textarea" },
+    { id: "roles", label: "Roles Involved (one per line)", type: "textarea" },
+    { id: "governance_level", label: "Governance Level", type: "select", options: ["Tactical — task-level RACI", "Operational — workstream level", "Strategic — program / steering committee level"] },
+    { id: "phase", label: "Project Phase", type: "select", options: ["Initiation", "Planning", "Execution", "Monitoring & Control", "Closing"] }
+  ],
+  status_report: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "report_date", label: "Report Date", type: "date" },
+    { id: "audience", label: "Primary Audience", type: "select", options: ["Project Sponsor / Steering", "Functional managers", "Working team", "Cross-functional stakeholders", "Executives / Board"] },
+    { id: "overall_status", label: "Overall Status", type: "select", options: ["🟢 Green — on track", "🟡 Yellow — at risk, manageable", "🔴 Red — off track, escalation needed"] },
+    { id: "schedule_status", label: "Schedule Status", type: "select", options: ["On / ahead", "1–2 weeks behind", "3–4 weeks behind", ">1 month behind", "Re-baselined"] },
+    { id: "budget_status", label: "Budget Status", type: "select", options: ["Under budget", "On budget", "Over budget — within tolerance", "Over budget — escalation"] },
+    { id: "kpis", label: "KPIs / Metrics Snapshot", type: "textarea" },
+    { id: "accomplishments", label: "What Got Done This Period", type: "textarea" },
+    { id: "next_steps", label: "Planned for Next Period", type: "textarea" },
+    { id: "blockers", label: "Blockers / Risks / Asks", type: "textarea" }
+  ],
+  stakeholder_map: [
+    { id: "project_context", label: "Project Context", type: "textarea" },
+    { id: "known_stakeholders", label: "Known Stakeholders (name + role)", type: "textarea" },
+    { id: "sensitivity", label: "Political Sensitivity", type: "select", options: ["Low — routine project", "Medium — visible", "High — board-level / cross-org"] },
+    { id: "org_size", label: "Organization Size", type: "select", options: ["Small (<100)", "Mid (100–1,000)", "Large (1,000–10,000)", "Enterprise (10,000+)", "Cross-organization / partnership"] },
+    { id: "primary_change_type", label: "Type of Change", type: "select", options: ["Tech-led", "Process-led", "Org / restructure", "Customer-facing", "Regulatory-driven"] },
+    { id: "known_blockers", label: "Known Political Dynamics", type: "textarea" }
+  ],
+  sprint_plan: [
+    { id: "team_name", label: "Team / Product", type: "text" },
+    { id: "sprint_number", label: "Sprint Number", type: "number" },
+    { id: "sprint_start", label: "Sprint Start Date", type: "date" },
+    { id: "sprint_end", label: "Sprint End Date", type: "date" },
+    { id: "team_members", label: "Team Member Count", type: "number" },
+    { id: "average_velocity", label: "Average Velocity (story points)", type: "number" },
+    { id: "sprint_goal", label: "Sprint Goal", type: "textarea" },
+    { id: "backlog", label: "Backlog / Candidate Stories", type: "textarea" },
+    { id: "definition_of_done", label: "Definition of Done", type: "textarea" },
+    { id: "constraints", label: "Holidays / Known Absences", type: "textarea" }
+  ],
+  retro: [
+    { id: "name", label: "Project / Sprint Name", type: "text" },
+    { id: "retro_date", label: "Retrospective Date", type: "date" },
+    { id: "team_size", label: "Team Size", type: "number" },
+    { id: "team_maturity", label: "Team Maturity", type: "select", options: ["Forming — new team", "Storming — finding norms", "Norming — settled rhythm", "Performing — high autonomy"] },
+    { id: "outcomes", label: "What Happened / Outcomes", type: "textarea" },
+    { id: "format", label: "Retro Format", type: "select", options: ["Start / Stop / Continue", "What went well / What didn't / Action items", "4Ls — Liked / Learned / Lacked / Longed for", "Sailboat — Wind / Anchors / Rocks / Island", "Mad / Sad / Glad", "DAKI — Drop / Add / Keep / Improve"] },
+    { id: "tone", label: "Tone", type: "select", options: ["Honest & direct — surface real issues", "Constructive & balanced", "Celebratory — mostly wins, light on critique"] },
+    { id: "previous_actions", label: "Previous Action Items", type: "textarea" }
+  ],
+  meeting_agenda: [
+    { id: "meeting_title", label: "Meeting Title", type: "text" },
+    { id: "meeting_date", label: "Meeting Date & Time", type: "datetime-local", hint: "format: YYYY-MM-DDTHH:MM (24-hour)" },
+    { id: "meeting_type", label: "Meeting Type", type: "select", options: ["Status check-in", "Decision-making", "Planning / kickoff", "Working session", "Steering committee", "Retrospective", "All-hands / town hall"] },
+    { id: "objective", label: "Objective (one sentence)", type: "textarea" },
+    { id: "duration", label: "Duration", type: "select", options: ["15 min", "30 min", "45 min", "60 min", "90 min", "2+ hours"] },
+    { id: "attendees", label: "Attendees & Roles", type: "textarea" },
+    { id: "topics", label: "Topics / Decisions to Cover", type: "textarea" },
+    { id: "prereads", label: "Pre-Reads", type: "textarea" },
+    { id: "decision_authority", label: "Decision Authority", type: "select", options: ["Consult-only — no decisions made", "Recommendation — escalate to sponsor", "Decision — group can finalize", "Vote / consensus required"] }
+  ],
+  comms_plan: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "audiences", label: "Audiences", type: "textarea" },
+    { id: "key_messages", label: "Key Messages / Milestones to Communicate", type: "textarea" },
+    { id: "launch_date", label: "Launch / Key Date", type: "date" },
+    { id: "duration_months", label: "Campaign Duration (months)", type: "number" },
+    { id: "program_phase", label: "Program Phase", type: "select", options: ["Pre-announcement", "Build-up / Awareness", "Launch", "Adoption / Reinforcement", "Sustain / BAU"] },
+    { id: "regulatory_constraints", label: "Regulatory / Legal Constraints", type: "textarea" },
+    { id: "tone_principles", label: "Tone / Voice Principles", type: "textarea" }
+  ],
+  budget: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "total_budget", label: "Total Budget", type: "number" },
+    { id: "currency", label: "Currency", type: "select", options: ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "PKR", "Other"] },
+    { id: "scope_summary", label: "Scope Summary", type: "textarea" },
+    { id: "start_date", label: "Budget Start Date", type: "date" },
+    { id: "end_date", label: "Budget End Date", type: "date" },
+    { id: "contingency_pct", label: "Contingency %", type: "number" },
+    { id: "funding_source", label: "Funding Source", type: "select", options: ["Operating budget (CAPEX)", "Operating budget (OPEX)", "Project-specific allocation", "Grant / external funding", "Customer-funded", "Mixed"] },
+    { id: "approval_authority", label: "Approval Authority", type: "text" }
+  ],
+  lessons_learned: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "period", label: "Period Covered", type: "text" },
+    { id: "objective_recap", label: "Original Objective", type: "textarea" },
+    { id: "outcomes_summary", label: "Outcomes Delivered", type: "textarea" },
+    { id: "went_well", label: "What Went Well", type: "textarea" },
+    { id: "went_wrong", label: "What Didn't Go Well", type: "textarea" },
+    { id: "team_size", label: "Team Size", type: "number" },
+    { id: "contributors", label: "Retro Contributors / Roles", type: "textarea" }
+  ],
+  change_request: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "change_title", label: "Change Title", type: "text" },
+    { id: "requested_by", label: "Requested By (Role)", type: "text" },
+    { id: "request_date", label: "Request Date", type: "date" },
+    { id: "description", label: "Change Description", type: "textarea" },
+    { id: "rationale", label: "Rationale / Justification", type: "textarea" },
+    { id: "urgency", label: "Urgency", type: "select", options: ["Low — schedule for next cycle", "Medium — current cycle", "High — within 1–2 weeks", "Critical — emergency"] },
+    { id: "alternatives", label: "Alternatives Considered", type: "textarea" },
+    { id: "estimated_impact", label: "Known Impacts (scope/cost/schedule)", type: "textarea" }
+  ],
+  issue_log: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "project_context", label: "Project Context", type: "textarea" },
+    { id: "phase", label: "Current Phase", type: "select", options: ["Initiation / Planning", "Execution", "Monitoring & Control", "Closing", "Post-launch / BAU"] },
+    { id: "team_size", label: "Team Size", type: "number" },
+    { id: "known_issues", label: "Known Open Issues", type: "textarea" },
+    { id: "recently_resolved", label: "Recently Resolved", type: "textarea" },
+    { id: "escalation_path", label: "Escalation Path", type: "text" }
+  ],
+  project_closure: [
+    { id: "project_name", label: "Project Name", type: "text" },
+    { id: "sponsor", label: "Sponsor", type: "text" },
+    { id: "pm_name", label: "Project Manager", type: "text" },
+    { id: "start_date", label: "Project Start Date", type: "date" },
+    { id: "end_date", label: "Project End Date (Actual)", type: "date" },
+    { id: "objectives_recap", label: "Original Objectives", type: "textarea" },
+    { id: "outcomes_delivered", label: "Outcomes Delivered", type: "textarea" },
+    { id: "scope_changes", label: "Scope Changes (added/cut)", type: "textarea" },
+    { id: "planned_budget", label: "Planned Budget", type: "number" },
+    { id: "actual_budget", label: "Actual Spend", type: "number" },
+    { id: "currency", label: "Currency", type: "select", options: ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "PKR", "Other"] },
+    { id: "key_lessons", label: "Top Lessons", type: "textarea" },
+    { id: "closure_status", label: "Closure Status", type: "select", options: ["Successful — fully delivered", "Partially successful — some objectives met", "Closed — incomplete delivery", "Cancelled — terminated mid-flight"] }
+  ]
+};
+
+function describeField(f) {
+  let line = `- "${f.id}" (${f.type}) — ${f.label}`;
+  if (f.hint) line += `. ${f.hint}`;
+  if (f.type === "select" && Array.isArray(f.options)) {
+    const opts = f.options.map(o => `"${o}"`).join(" | ");
+    line += `\n    Allowed values (return one EXACTLY, character-for-character): ${opts}`;
+  } else if (f.type === "date") {
+    line += `\n    Format: YYYY-MM-DD. If the document gives a date in any other format, convert it.`;
+  } else if (f.type === "datetime-local") {
+    line += `\n    Format: YYYY-MM-DDTHH:MM (24-hour).`;
+  } else if (f.type === "number") {
+    line += `\n    Format: digits only, no currency symbols, commas, or units (e.g. "250000" not "$250,000").`;
+  }
+  return line;
+}
+
+function buildExtractionPrompt(artifactType, rawText) {
+  const fields = EXTRACT_FIELDS[artifactType];
+  if (!fields) throw new Error(`no extract schema for artifact type: ${artifactType}`);
+
+  const fieldDescriptions = fields.map(describeField).join("\n");
+  const keyList = fields.map(f => `"${f.id}"`).join(", ");
+
+  return `You are extracting structured project-management data from a document so a form can be auto-filled.
+
+Document text:
+---
+${rawText}
+---
+
+Extract the following fields for a "${artifactType}" artifact. Return ONLY a single JSON object — no preamble, no markdown fences, no commentary.
+
+Rules:
+- Use the exact key names listed below.
+- If a field cannot be found in the document, return "" (empty string) for that key. Do NOT invent data.
+- For "select" fields, the value MUST be one of the listed allowed values, character-for-character. If the document hints at a value but doesn't match any option exactly, pick the single closest option.
+- For "date" fields, output YYYY-MM-DD; convert if needed.
+- For "number" fields, output digits only — strip currency symbols, commas, and units.
+- For "text" / "textarea" fields, keep the value concise (the form has length limits). Prefer paraphrasing over verbatim copies of long passages.
+
+Fields to extract:
+${fieldDescriptions}
+
+Output format: a single JSON object whose keys are exactly ${keyList}.
+Example shape: {"field_id_1": "value", "field_id_2": ""}`;
+}
+
 const VALID_METHODOLOGIES = ["PMBOK", "Agile", "PRINCE2", "Hybrid"];
 
 function methodologyContext(methodology) {
@@ -473,4 +693,4 @@ function buildRevisePrompt(artifactType, inputs, previousContent, instructions, 
 
 const VALID_TYPES = Object.keys(INSTRUCTIONS);
 
-module.exports = { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, VALID_TYPES, VALID_METHODOLOGIES };
+module.exports = { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES };
