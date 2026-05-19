@@ -14,6 +14,30 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/turndown-plugin-gfm/1.0.2/turndown-plugin-gfm.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
+<!-- Lucide-style SVG icon sprite (single inline copy, referenced by <use href="#i-…">) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- All icons: 24x24 viewBox, stroke=currentColor, fill=none, stroke-width=1.75, round caps -->
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+    <symbol id="i-stars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8L4 10.7l5.1 3.3L8.4 20l3.6-3.6 3.6 3.6-.7-6 5.1-3.3-6.1-1.9z"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5M9 8V2M15 8V2M18 8v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8h12z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8L4 10.7l5.1 3.3L8.4 20l3.6-3.6 3.6 3.6-.7-6 5.1-3.3-6.1-1.9z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></symbol>
+  </defs>
+</svg>
 </head>
 <body>
 
@@ -43,7 +67,12 @@
         <input type="email" id="login-email" autocomplete="email" required />
 
         <label for="login-password">Password <span class="req">*</span></label>
-        <input type="password" id="login-password" autocomplete="current-password" required />
+        <div class="password-wrap">
+          <input type="password" id="login-password" autocomplete="current-password" required />
+          <button type="button" class="password-toggle" data-toggle="login-password" aria-label="Show password">
+            <svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg>
+          </button>
+        </div>
 
         <div style="margin-top: 22px;">
           <button type="submit" class="btn" id="login-btn">▸ Grant Access</button>
@@ -60,7 +89,13 @@
         <input type="email" id="signup-email" autocomplete="email" required />
 
         <label for="signup-password">Password <span class="req">*</span></label>
-        <input type="password" id="signup-password" autocomplete="new-password" required minlength="6" placeholder="min 6 characters" />
+        <div class="password-wrap">
+          <input type="password" id="signup-password" autocomplete="new-password" required minlength="6" placeholder="min 6 characters" />
+          <button type="button" class="password-toggle" data-toggle="signup-password" aria-label="Show password">
+            <svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg>
+          </button>
+        </div>
+        <small class="password-strength" id="signup-password-strength" aria-live="polite">8+ characters recommended</small>
 
         <div style="margin-top: 22px;">
           <button type="submit" class="btn" id="signup-btn">▸ Create Account</button>
@@ -71,12 +106,12 @@
     <div class="auth-footer">
       <span>Sheet 01 of 01</span>
       <span class="divider"></span>
-      <span>Plan Forge · v0.6.0</span>
+      <span>Plan Forge · <span id="app-version">v0.0.0</span></span>
       <span class="divider"></span>
       <div class="theme-switcher" style="margin-top: 12px;">
-        <button class="theme-btn active" data-theme="light" title="Light Theme">☀️</button>
-        <button class="theme-btn" data-theme="dark" title="Dark Theme">🌙</button>
-        <button class="theme-btn" data-theme="midnight" title="Midnight Theme">⭐</button>
+        <button class="theme-btn active" data-theme="light" title="Light Theme" aria-label="Light theme"><svg class="icon" aria-hidden="true"><use href="#i-sun"></use></svg></button>
+        <button class="theme-btn" data-theme="dark" title="Dark Theme" aria-label="Dark theme"><svg class="icon" aria-hidden="true"><use href="#i-moon"></use></svg></button>
+        <button class="theme-btn" data-theme="midnight" title="Midnight Theme" aria-label="Midnight theme"><svg class="icon" aria-hidden="true"><use href="#i-stars"></use></svg></button>
       </div>
     </div>
   </div>
@@ -86,30 +121,54 @@
 <div id="app-view" class="hidden">
 
   <header class="app-header">
-    <div class="brand">
+    <div class="brand" style="display:flex;align-items:center;">
+      <button class="menu-toggle" id="menu-toggle" aria-label="Open archive menu" aria-controls="sidebar" aria-expanded="false">
+        <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
+      </button>
       <span class="brand-mark">Plan <em>Forge</em>.</span>
       <span class="brand-tag">PM Drafting Console</span>
     </div>
     <div class="session">
       <span class="user"><span class="dot"></span><span id="user-email">—</span></span>
+
+      <span class="methodology-switcher" title="Project management methodology — threaded into every prompt">
+        <span class="label-mini">Method</span>
+        <select id="methodology-select" aria-label="Project management methodology">
+          <option value="">Auto</option>
+          <option value="PMBOK">PMBOK</option>
+          <option value="Agile">Agile</option>
+          <option value="PRINCE2">PRINCE2</option>
+          <option value="Hybrid">Hybrid</option>
+        </select>
+      </span>
+
       <div class="theme-switcher">
-        <button class="theme-btn active" data-theme="light" title="Light Theme">☀️</button>
-        <button class="theme-btn" data-theme="dark" title="Dark Theme">🌙</button>
-        <button class="theme-btn" data-theme="midnight" title="Midnight Theme">⭐</button>
+        <button class="theme-btn active" data-theme="light" title="Light Theme" aria-label="Light theme"><svg class="icon" aria-hidden="true"><use href="#i-sun"></use></svg></button>
+        <button class="theme-btn" data-theme="dark" title="Dark Theme" aria-label="Dark theme"><svg class="icon" aria-hidden="true"><use href="#i-moon"></use></svg></button>
+        <button class="theme-btn" data-theme="midnight" title="Midnight Theme" aria-label="Midnight theme"><svg class="icon" aria-hidden="true"><use href="#i-stars"></use></svg></button>
       </div>
-      <button class="btn btn-ghost btn-sm" id="connect-claude-btn" title="Connect this app to your Claude subscription">🔌 Connect Claude</button>
-      <button class="btn btn-ghost btn-sm" id="settings-btn">⚙ Settings</button>
-      <button class="btn btn-ghost btn-sm" id="logout-btn">Sign Out</button>
+      <button class="btn btn-ghost btn-sm" id="connect-claude-btn" title="Connect this app to your Claude subscription">
+        <svg class="icon" aria-hidden="true"><use href="#i-plug"></use></svg> Connect Claude
+      </button>
+      <button class="btn btn-ghost btn-sm" id="settings-btn" aria-label="Open settings">
+        <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg> Settings
+      </button>
+      <button class="btn btn-ghost btn-sm" id="logout-btn" aria-label="Sign out">
+        <svg class="icon" aria-hidden="true"><use href="#i-logout"></use></svg> Sign Out
+      </button>
     </div>
   </header>
 
+  <!-- mobile drawer scrim -->
+  <div class="drawer-scrim" id="drawer-scrim" aria-hidden="true"></div>
+
   <!-- refine modal -->
-  <div id="refine-modal" class="modal hidden">
+  <div id="refine-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="refine-title">
     <div class="modal-backdrop"></div>
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Refine Artifact</h2>
-        <button class="modal-close" id="refine-close">✕</button>
+        <h2 id="refine-title">Refine Artifact</h2>
+        <button class="modal-close" id="refine-close" aria-label="Close refine dialog"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button>
       </div>
       <div class="modal-body">
         <div class="form-section">
@@ -124,18 +183,18 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost btn-sm" id="refine-cancel">Cancel</button>
-        <button class="btn btn-sm" id="refine-submit">▸ Generate Revision</button>
+        <button class="btn btn-sm" id="refine-submit" disabled>▸ Generate Revision</button>
       </div>
     </div>
   </div>
 
   <!-- settings modal -->
-  <div id="settings-modal" class="modal hidden">
+  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="modal-backdrop"></div>
     <div class="modal-content">
       <div class="modal-header">
-        <h2>LLM Configuration</h2>
-        <button class="modal-close" id="settings-close">✕</button>
+        <h2 id="settings-title">LLM Configuration</h2>
+        <button class="modal-close" id="settings-close" aria-label="Close settings"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button>
       </div>
       <div class="modal-body">
         <div class="form-section">
@@ -149,14 +208,17 @@
 
           <label for="config-model" id="config-model-label">Model <span class="req">*</span></label>
           <select id="config-model">
-            <option value="claude-opus-4-1">Claude Opus 4.1</option>
-            <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4 (Latest)</option>
-            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+            <!-- Populated by JS — these defaults exist only for first paint. -->
           </select>
 
           <div id="config-api-key-row">
             <label for="config-api-key">API Key <span class="req">*</span></label>
-            <input type="password" id="config-api-key" placeholder="Enter your API key" />
+            <div class="password-wrap">
+              <input type="password" id="config-api-key" placeholder="Enter your API key" />
+              <button type="button" class="password-toggle" data-toggle="config-api-key" aria-label="Show API key">
+                <svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg>
+              </button>
+            </div>
             <small style="color: var(--paper-dim); display: block; margin-top: 4px;">
               Your API key is stored securely and only used by the backend.
             </small>
@@ -180,9 +242,9 @@
             <!-- step 2: URL received → show URL + code input -->
             <div id="oauth-step-code" class="hidden">
               <p style="color: var(--paper); font-size: 13px; margin: 4px 0 6px;"><strong>Step 1.</strong> A browser tab just opened to Anthropic's authorization page. If it didn't open, <a id="oauth-url-link" href="#" target="_blank" rel="noopener" style="color: var(--cyan); text-decoration: underline;">click here</a>.</p>
-              <p style="color: var(--paper); font-size: 13px; margin: 10px 0 6px;"><strong>Step 2.</strong> After clicking <em>Authorize</em>, you'll land on a page showing a code (or a URL containing one). Copy the <strong>full URL from the address bar</strong> or just the code, and paste it below:</p>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <input type="text" id="oauth-code-input" placeholder="Paste the full callback URL or just the code…" style="flex: 1; padding: 8px 10px; font-family: var(--font-mono); font-size: 12px;" />
+              <p style="color: var(--paper); font-size: 13px; margin: 10px 0 6px;"><strong>Step 2.</strong> After clicking <em>Authorize</em>, you'll land on a page showing a code (or a URL containing one). Paste the <strong>full URL from the address bar</strong> or just the code below:</p>
+              <textarea id="oauth-code-input" rows="3" placeholder="Paste the full callback URL or just the code…"></textarea>
+              <div class="oauth-submit-row">
                 <button class="btn btn-sm" id="oauth-submit-btn">Authenticate</button>
               </div>
               <small id="oauth-submit-status" style="color: var(--paper-dim); display: block; margin-top: 6px; white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; padding: 8px 10px; background: rgba(0,0,0,0.04); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; line-height: 1.4;"></small>
@@ -202,18 +264,18 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost btn-sm" id="settings-cancel">Cancel</button>
-        <button class="btn btn-sm" id="config-save-btn">Save & Deploy</button>
+        <button class="btn btn-sm" id="config-save-btn">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- document mismatch modal: shown when an uploaded file doesn't fit the selected artifact type -->
-  <div id="doc-mismatch-modal" class="modal hidden">
+  <!-- document mismatch modal -->
+  <div id="doc-mismatch-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="doc-mismatch-title">
     <div class="modal-backdrop"></div>
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Document doesn't match</h2>
-        <button class="modal-close" id="doc-mismatch-close">✕</button>
+        <h2 id="doc-mismatch-title">Document doesn't match</h2>
+        <button class="modal-close" id="doc-mismatch-close" aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button>
       </div>
       <div class="modal-body">
         <div class="form-section">
@@ -238,7 +300,7 @@
   <main class="app-main">
 
     <!-- sidebar / archive -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="panel">
         <span class="tick-bl"></span><span class="tick-br"></span>
         <div class="panel-head">
@@ -248,6 +310,9 @@
         <div class="panel-body">
           <div class="sidebar-actions">
             <button class="btn btn-ghost btn-sm" id="new-artifact-btn" style="width: 100%;">＋ New Artifact</button>
+          </div>
+          <div class="archive-search">
+            <input type="search" id="archive-search-input" placeholder="Filter by title or type…" aria-label="Filter archive" autocomplete="off" />
           </div>
           <div class="archive-list" id="archive-list">
             <div class="archive-empty">
@@ -306,7 +371,7 @@
 
           <div class="upload-row">
             <button type="button" class="btn btn-ghost btn-sm" id="upload-doc-btn">
-              📎 Upload & Fill from Document
+              <svg class="icon" aria-hidden="true"><use href="#i-paperclip"></use></svg> Upload &amp; Fill from Document
             </button>
             <span class="upload-hint" id="upload-hint"></span>
             <input type="file" id="upload-file-input"
@@ -315,7 +380,10 @@
           </div>
 
           <div class="submit-row">
-            <button class="btn" id="deploy-btn">▶ Generate Artifact</button>
+            <button class="btn" id="deploy-btn">
+              <svg class="icon" aria-hidden="true"><use href="#i-play"></use></svg> Generate Artifact
+              <span class="kbd-hint" id="kbd-hint" aria-hidden="true"></span>
+            </button>
           </div>
         </div>
       </div>
@@ -326,48 +394,53 @@
         <div class="panel-head">
           <span><span class="fig">02</span> · Rendered Output</span>
           <div class="output-actions">
-            <select class="revisions-select hidden" id="revisions-select" title="Switch revision"></select>
-            <button class="btn btn-ghost btn-sm hidden" id="refine-btn">✦ Refine</button>
-            <button class="btn btn-ghost btn-sm hidden" id="copy-btn">Copy</button>
-            <button class="btn btn-ghost btn-sm hidden" id="edit-btn">✏ Edit</button>
-            <div style="position: relative;">
-              <button class="btn btn-ghost btn-sm hidden" id="download-btn" style="min-width: 120px;">
-                📥 Export
+            <select class="revisions-select hidden" id="revisions-select" title="Switch revision" aria-label="Switch revision"></select>
+            <button class="btn btn-ghost btn-sm hidden" id="refine-btn">
+              <svg class="icon" aria-hidden="true"><use href="#i-sparkles"></use></svg> Refine
+            </button>
+            <button class="btn btn-ghost btn-sm hidden" id="copy-btn">
+              <svg class="icon" aria-hidden="true"><use href="#i-copy"></use></svg> Copy
+            </button>
+            <button class="btn btn-ghost btn-sm hidden" id="edit-btn">
+              <svg class="icon" aria-hidden="true"><use href="#i-pencil"></use></svg> Edit
+            </button>
+            <div class="download-wrap">
+              <button class="btn btn-ghost btn-sm hidden" id="download-btn" aria-haspopup="menu" aria-expanded="false">
+                <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg> Export
               </button>
-              <select class="download-format hidden" id="download-format">
-                <optgroup label="📄 Standard Formats">
-                  <option value="markdown" data-format="markdown">Markdown File</option>
-                  <option value="csv" data-format="csv">CSV Format</option>
-                  <option value="excel" data-format="excel">Excel Workbook</option>
-                  <option value="generic" data-format="generic">Generic PM Excel</option>
-                </optgroup>
-                <optgroup label="⚡ Project Management">
-                  <option value="jira" data-format="jira">Jira Issues</option>
-                  <option value="asana" data-format="asana">Asana Tasks</option>
-                  <option value="monday" data-format="monday">Monday.com</option>
-                  <option value="linear" data-format="linear">Linear Issues</option>
-                  <option value="azure" data-format="azure">Azure DevOps</option>
-                  <option value="msproject" data-format="msproject">MS Project</option>
-                  <option value="wrike" data-format="wrike">Wrike Tasks</option>
-                  <option value="smartsheet" data-format="smartsheet">Smartsheet</option>
-                  <option value="trello" data-format="trello">Trello Cards</option>
-                </optgroup>
-                <optgroup label="👥 Development &amp; Collab">
-                  <option value="github" data-format="github">GitHub Issues</option>
-                </optgroup>
-                <optgroup label="📝 Documentation">
-                  <option value="confluence" data-format="confluence">Confluence Doc</option>
-                  <option value="notion" data-format="notion">Notion Page</option>
-                  <option value="googlesheets" data-format="googlesheets">Google Sheets</option>
-                </optgroup>
-              </select>
+              <div class="download-menu hidden" id="download-menu" role="menu">
+                <span class="group-label">Standard Formats</span>
+                <button class="menu-item" role="menuitem" data-format="markdown">Markdown File</button>
+                <button class="menu-item" role="menuitem" data-format="csv">CSV Format</button>
+                <button class="menu-item" role="menuitem" data-format="excel">Excel Workbook</button>
+                <button class="menu-item" role="menuitem" data-format="generic">Generic PM Excel</button>
+
+                <span class="group-label">Project Management</span>
+                <button class="menu-item" role="menuitem" data-format="jira">Jira Issues</button>
+                <button class="menu-item" role="menuitem" data-format="asana">Asana Tasks</button>
+                <button class="menu-item" role="menuitem" data-format="monday">Monday.com</button>
+                <button class="menu-item" role="menuitem" data-format="linear">Linear Issues</button>
+                <button class="menu-item" role="menuitem" data-format="azure">Azure DevOps</button>
+                <button class="menu-item" role="menuitem" data-format="msproject">MS Project</button>
+                <button class="menu-item" role="menuitem" data-format="wrike">Wrike Tasks</button>
+                <button class="menu-item" role="menuitem" data-format="smartsheet">Smartsheet</button>
+                <button class="menu-item" role="menuitem" data-format="trello">Trello Cards</button>
+
+                <span class="group-label">Development &amp; Collab</span>
+                <button class="menu-item" role="menuitem" data-format="github">GitHub Issues</button>
+
+                <span class="group-label">Documentation</span>
+                <button class="menu-item" role="menuitem" data-format="confluence">Confluence Doc</button>
+                <button class="menu-item" role="menuitem" data-format="notion">Notion Page</button>
+                <button class="menu-item" role="menuitem" data-format="googlesheets">Google Sheets</button>
+              </div>
             </div>
           </div>
         </div>
         <div class="output-body" id="output-body">
           <div class="empty-state">
             <span class="big">Standing by.</span>
-            <span class="small">Set specifications above, then generate.</span>
+            <span class="small">Pick an artifact type above, fill the form, then generate.</span>
           </div>
         </div>
       </div>
@@ -376,8 +449,8 @@
   </main>
 </div>
 
-<!-- toast host -->
-<div id="toast-host"></div>
+<!-- toast host (accessibility: announces non-error toasts politely) -->
+<div id="toast-host" aria-live="polite" aria-atomic="false"></div>
 
 <script src="app.js"></script>
 </body>

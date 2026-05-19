@@ -1,6 +1,6 @@
 {
   "name": "plan-forge-backend",
-  "version": "1.0.0",
+  "version": "0.7.0",
   "description": "Plan Forge backend — auth, artifacts, Anthropic proxy",
   "main": "src/server.js",
   "scripts": {

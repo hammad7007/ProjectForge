@@ -30,12 +30,19 @@ if (!ANTHROPIC_API_KEY) {
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+// 5 MB JSON limit — generous enough to forward extracted document text
+// (source_document field on /api/artifacts can be hundreds of KB after a
+// long PDF is extracted). Don't raise this past 10 MB without raising
+// nginx and multer together.
+app.use(express.json({ limit: "5mb" }));
 
-// File upload middleware
+// File upload middleware. 25 MB cap — must stay in sync with nginx's
+// `client_max_body_size` in frontend/nginx.conf. If they diverge the
+// smaller wins and the user gets a confusing 413 from whichever layer
+// rejects first.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 25 * 1024 * 1024 }
 });
 
 // ------- helpers -------
@@ -71,6 +78,14 @@ app.get("/api/health", async (_req, res) => {
   } catch {
     res.status(503).json({ ok: false, db: "down" });
   }
+});
+
+// ------- version -------
+// Returns the version declared in backend/package.json so the frontend
+// footer can display it without drift. Cheap, no DB call.
+const PKG_VERSION = require("../package.json").version;
+app.get("/api/version", (_req, res) => {
+  res.json({ version: PKG_VERSION });
 });
 
 // ------- auth -------
@@ -324,7 +339,20 @@ const SUPPORTED_UPLOAD_EXTS = new Set([
 ]);
 const SUPPORTED_UPLOAD_LABEL = "PDF, Word (.docx), Excel (.xlsx/.xls), CSV, TXT, Markdown, RTF, JSON, HTML";
 
-app.post("/api/extract", authRequired, upload.single("file"), async (req, res) => {
+// Wrap multer so file-size and other upload errors surface as proper JSON
+// responses with explicit reasons instead of a generic 500. Without this
+// the frontend just sees "Upload failed" with no clue what went wrong.
+function handleUpload(req, res, next) {
+  upload.single("file")(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ error: "File is too large. Maximum size is 25 MB." });
+    }
+    return res.status(400).json({ error: err.message || "Upload failed" });
+  });
+}
+
+app.post("/api/extract", authRequired, handleUpload, async (req, res) => {
   const { artifact_type } = req.body || {};
   const file = req.file;
 

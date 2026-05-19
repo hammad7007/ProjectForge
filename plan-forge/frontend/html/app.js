@@ -11,10 +11,25 @@
   const METHODOLOGY_KEY = 'planforge_methodology';
   const VALID_METHODOLOGIES = ['PMBOK', 'Agile', 'PRINCE2', 'Hybrid'];
 
+  // Snapshot key used by the graceful-reauth path: when the JWT expires
+  // mid-session we stash the in-flight form state here so the user can
+  // resume after re-login instead of losing typed inputs.
+  const FORM_SNAPSHOT_KEY = 'planforge_form_snapshot';
+
+  // Set to the interval id returned by `renderThinking` so we can clear
+  // it deterministically from renderError / renderOutput. The previous
+  // implementation relied on `!stream.isConnected` and leaked timers
+  // across error transitions (audit M11).
+  let thinkingInterval = null;
+
   function getMethodology() {
     const m = localStorage.getItem(METHODOLOGY_KEY) || '';
     return VALID_METHODOLOGIES.includes(m) ? m : '';
   }
+
+  // Platform-aware keyboard modifier label for the Generate hint.
+  const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
+  const KBD_MOD = IS_MAC ? '⌘' : 'Ctrl';
 
   // ===================================================================
   // ARTIFACT SCHEMAS (fields per artifact type — kept client-side for UI)
@@ -376,6 +391,7 @@
     // its text and metadata so the next /api/artifacts call can forward the
     // doc to the LLM as authoritative project context.
     uploadedDoc: null,        // { name, type, text }
+    archiveFilter: '',        // text the user typed into the archive search
   };
 
   // ===================================================================
@@ -387,8 +403,11 @@
 
     const res = await fetch(path, { ...options, headers });
 
-    // handle expired token
+    // handle expired token — before tearing down state, snapshot in-flight
+    // form values so the user can resume after re-login instead of losing
+    // everything they had typed (audit H8).
     if (res.status === 401 && state.token) {
+      snapshotFormForReauth();
       logout();
       throw new Error('Session expired — please sign in again.');
     }
@@ -460,6 +479,53 @@
     localStorage.setItem(USER_KEY, JSON.stringify(user));
   }
 
+  // Capture the in-flight form so it survives a 401 → re-auth round trip.
+  // Stored in sessionStorage (not localStorage) on purpose: a real new
+  // browser session should start clean.
+  function snapshotFormForReauth() {
+    try {
+      const dyn = document.getElementById('dynamic-fields');
+      if (!dyn) return;
+      const inputs = {};
+      dyn.querySelectorAll('input, textarea, select').forEach(el => {
+        if (el.dataset.key) inputs[el.dataset.key] = el.value;
+      });
+      const typeSel = document.getElementById('gen-type');
+      const snapshot = {
+        type: typeSel ? typeSel.value : null,
+        inputs,
+        at: Date.now(),
+      };
+      sessionStorage.setItem(FORM_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    } catch { /* swallow — re-auth is best-effort */ }
+  }
+
+  // Restore the snapshot if one was taken in the last 15 minutes. Called
+  // once after a successful login or signup.
+  function maybeRestoreFormSnapshot() {
+    try {
+      const raw = sessionStorage.getItem(FORM_SNAPSHOT_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(FORM_SNAPSHOT_KEY);
+      const snap = JSON.parse(raw);
+      if (!snap || !snap.inputs) return;
+      if (Date.now() - (snap.at || 0) > 15 * 60 * 1000) return;
+      const typeSel = document.getElementById('gen-type');
+      if (snap.type && typeSel && SCHEMAS[snap.type]) {
+        typeSel.value = snap.type;
+        renderFields();
+      }
+      Object.entries(snap.inputs).forEach(([k, v]) => {
+        const el = document.getElementById('f_' + k);
+        if (el && v) {
+          el.value = v;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+      toast('Restored your in-progress form');
+    } catch { /* ignore */ }
+  }
+
   function logout() {
     state.token = null;
     state.user = null;
@@ -506,6 +572,7 @@
       });
       setSession(token, user);
       showApp();
+      maybeRestoreFormSnapshot();
       toast('Access granted');
     } catch (err) {
       toast(err.message, 'error');
@@ -531,6 +598,7 @@
       });
       setSession(token, user);
       showApp();
+      maybeRestoreFormSnapshot();
       toast('Account created');
     } catch (err) {
       toast(err.message, 'error');
@@ -544,6 +612,134 @@
     logout();
     toast('Signed out');
   });
+
+  // ===================================================================
+  // MOBILE DRAWER (audit H3)
+  // Below 960px the sidebar is positioned off-screen and slid in via the
+  // hamburger button. The scrim provides a tap-to-dismiss affordance and
+  // visually de-emphasizes the workspace while the drawer is open.
+  // ===================================================================
+  const sidebarEl = $('sidebar');
+  const menuToggleBtn = $('menu-toggle');
+  const drawerScrim = $('drawer-scrim');
+
+  function openDrawer() {
+    if (!sidebarEl) return;
+    sidebarEl.classList.add('open');
+    if (drawerScrim) drawerScrim.classList.add('open');
+    if (menuToggleBtn) menuToggleBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeDrawer() {
+    if (!sidebarEl) return;
+    sidebarEl.classList.remove('open');
+    if (drawerScrim) drawerScrim.classList.remove('open');
+    if (menuToggleBtn) menuToggleBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  // Used by archive-item click handlers so that navigating to an artifact
+  // on mobile auto-dismisses the drawer (otherwise the user can't see the
+  // content they just selected).
+  function closeDrawerIfMobile() {
+    if (window.matchMedia('(max-width: 960px)').matches) closeDrawer();
+  }
+
+  if (menuToggleBtn) {
+    menuToggleBtn.addEventListener('click', () => {
+      if (sidebarEl.classList.contains('open')) closeDrawer();
+      else openDrawer();
+    });
+  }
+  if (drawerScrim) drawerScrim.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sidebarEl?.classList.contains('open')) closeDrawer();
+  });
+
+  // ===================================================================
+  // ARCHIVE SEARCH (audit H5)
+  // ===================================================================
+  const archiveSearchInput = $('archive-search-input');
+  if (archiveSearchInput) {
+    archiveSearchInput.addEventListener('input', () => {
+      state.archiveFilter = archiveSearchInput.value;
+      renderArchive();
+    });
+  }
+
+  // ===================================================================
+  // METHODOLOGY SWITCHER (audit H2 — feature was wired backend-side but the
+  // UI selector existed only in CSS, never in HTML; now it lives in the
+  // header next to the theme switcher). Persisted in localStorage and
+  // forwarded to /api/artifacts on every generate/refine.
+  // ===================================================================
+  const methodologySelectEl = $('methodology-select');
+  if (methodologySelectEl) {
+    methodologySelectEl.value = getMethodology();
+    methodologySelectEl.addEventListener('change', () => {
+      const v = methodologySelectEl.value;
+      if (v && VALID_METHODOLOGIES.includes(v)) {
+        localStorage.setItem(METHODOLOGY_KEY, v);
+        toast(`Methodology set to ${v}`);
+      } else {
+        localStorage.removeItem(METHODOLOGY_KEY);
+        toast('Methodology cleared (Auto)');
+      }
+    });
+  }
+
+  // ===================================================================
+  // PASSWORD SHOW/HIDE TOGGLE (audit M5)
+  // The toggle button lives inside .password-wrap and references the input
+  // it controls via data-toggle="<input id>".
+  // ===================================================================
+  document.querySelectorAll('.password-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.toggle;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      const hidden = input.type === 'password';
+      input.type = hidden ? 'text' : 'password';
+      btn.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+      const useEl = btn.querySelector('use');
+      if (useEl) useEl.setAttribute('href', hidden ? '#i-eye-off' : '#i-eye');
+    });
+  });
+
+  // ===================================================================
+  // PASSWORD STRENGTH HINT (audit M4) — signup only.
+  // Rough heuristic: length + character class diversity. We don't pretend
+  // to score real entropy.
+  // ===================================================================
+  const signupPwd = $('signup-password');
+  const signupStrength = $('signup-password-strength');
+  if (signupPwd && signupStrength) {
+    signupPwd.addEventListener('input', () => {
+      const v = signupPwd.value;
+      if (!v) {
+        signupStrength.textContent = '8+ characters recommended';
+        signupStrength.className = 'password-strength';
+        return;
+      }
+      let score = 0;
+      if (v.length >= 6) score++;
+      if (v.length >= 10) score++;
+      if (/[A-Z]/.test(v) && /[a-z]/.test(v)) score++;
+      if (/\d/.test(v)) score++;
+      if (/[^A-Za-z0-9]/.test(v)) score++;
+      let label, cls;
+      if (score <= 2) { label = 'Weak — try 10+ chars with mixed case'; cls = 'weak'; }
+      else if (score <= 3) { label = 'Fair — add a number or symbol'; cls = 'fair'; }
+      else { label = 'Good'; cls = 'good'; }
+      signupStrength.textContent = label;
+      signupStrength.className = 'password-strength ' + cls;
+    });
+  }
+
+  // ===================================================================
+  // KEYBOARD SHORTCUT HINT next to the Generate button (audit M6).
+  // ===================================================================
+  const kbdHint = $('kbd-hint');
+  if (kbdHint) kbdHint.textContent = `${KBD_MOD}↵`;
 
   // ===================================================================
   // SETTINGS MODAL
@@ -758,14 +954,16 @@
         method: 'POST',
         body: JSON.stringify(body)
       });
-      toast('Configuration saved. Backend restarting…');
+      // No backend restart — the config row is read on every API call, so the
+      // change takes effect on the next /api/artifacts request. Don't reload
+      // the page; that would silently wipe the user's in-progress form
+      // (audit C3).
+      toast('Configuration saved');
       settingsModal.classList.add('hidden');
-
-      setTimeout(() => {
-        location.reload();
-      }, 1500);
+      refreshHeaderConnectVisibility();
     } catch (err) {
       toast('Failed to save config: ' + err.message, 'error');
+    } finally {
       configSaveBtn.disabled = false;
       configTestBtn.disabled = false;
     }
@@ -1065,26 +1263,77 @@
   function renderArchive() {
     const list = $('archive-list');
     const count = $('archive-count');
-    count.textContent = `${state.artifacts.length} item${state.artifacts.length === 1 ? '' : 's'}`;
 
-    if (!state.artifacts.length) {
-      list.innerHTML = `<div class="archive-empty">No artifacts yet.<small>generate your first one →</small></div>`;
+    // Apply the in-memory archive filter (audit H5). The filter matches
+    // title or the human-readable type label, case-insensitive.
+    const q = (state.archiveFilter || '').trim().toLowerCase();
+    const items = q
+      ? state.artifacts.filter(a => {
+          const title = (a.title || '').toLowerCase();
+          const typeLabel = (TYPE_LABEL[a.artifact_type] || a.artifact_type || '').toLowerCase();
+          return title.includes(q) || typeLabel.includes(q);
+        })
+      : state.artifacts;
+
+    count.textContent = q
+      ? `${items.length}/${state.artifacts.length}`
+      : `${state.artifacts.length} item${state.artifacts.length === 1 ? '' : 's'}`;
+
+    if (!items.length) {
+      list.innerHTML = q
+        ? `<div class="archive-empty">No matches.<small>try a different filter →</small></div>`
+        : `<div class="archive-empty">No artifacts yet.<small>generate your first one →</small></div>`;
       return;
     }
 
-    list.innerHTML = state.artifacts.map(a => {
+    // Trash icon SVG reused per row. Kept inline so we don't depend on the
+    // sprite being available before this fragment is parsed.
+    const trashSvg = `<svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>`;
+
+    list.innerHTML = items.map(a => {
       const revTag = a.revision && a.revision > 1 ? ` · v${a.revision}` : '';
       return `
       <div class="archive-item ${state.activeArtifact?.id === a.id ? 'active' : ''}" data-id="${a.id}">
         <div class="a-type">${TYPE_LABEL[a.artifact_type] || a.artifact_type}${revTag}</div>
         <div class="a-title">${escapeHtml(a.title)}</div>
         <div class="a-date">${formatDate(a.created_at)}</div>
+        <button class="a-delete" data-id="${a.id}" title="Delete artifact" aria-label="Delete ${escapeHtml(a.title)}">${trashSvg}</button>
       </div>
     `;
     }).join('');
 
     list.querySelectorAll('.archive-item').forEach(el => {
-      el.addEventListener('click', () => openArtifact(Number(el.dataset.id)));
+      el.addEventListener('click', (e) => {
+        // Don't open if the click landed on the delete button.
+        if (e.target.closest('.a-delete')) return;
+        openArtifact(Number(el.dataset.id));
+        closeDrawerIfMobile();
+      });
+    });
+
+    list.querySelectorAll('.a-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.id);
+        const target = state.artifacts.find(a => a.id === id);
+        const label = target ? `"${target.title}"` : 'this artifact';
+        if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
+        try {
+          await api(`/api/artifacts/${id}`, { method: 'DELETE' });
+          state.artifacts = state.artifacts.filter(a => a.id !== id);
+          // If we just deleted the artifact currently being viewed, reset
+          // the output panel to its empty state so the user isn't left
+          // staring at content that no longer exists.
+          if (state.activeArtifact?.id === id) {
+            state.activeArtifact = null;
+            resetOutput();
+          }
+          renderArchive();
+          toast('Artifact deleted');
+        } catch (err) {
+          toast('Delete failed: ' + err.message, 'error');
+        }
+      });
     });
   }
 
@@ -1151,6 +1400,7 @@
     }
 
     deployBtn.disabled = true;
+    dynWrap.classList.add('deploying');
     $('input-status').textContent = 'drafting…';
     hideOutputActions();
     renderThinking();
@@ -1188,6 +1438,7 @@
       renderError(err.message);
     } finally {
       deployBtn.disabled = false;
+      dynWrap.classList.remove('deploying');
       $('input-status').textContent = 'ready';
     }
   }
@@ -1416,38 +1667,36 @@
     hideOutputActions();
   }
 
+  // Honest loading state. The previous version cycled through a fake list of
+  // steps and named a hardcoded model ("Drafting with claude-sonnet-4")
+  // regardless of which provider/model the user had selected (audit C2).
+  // Now we show generic animated bars + a single neutral line — and we keep
+  // the interval id so it can be cleared deterministically (audit M11).
+  function clearThinking() {
+    if (thinkingInterval !== null) {
+      clearInterval(thinkingInterval);
+      thinkingInterval = null;
+    }
+  }
+
   function renderThinking() {
-    const steps = [
-      'Parsing specifications',
-      'Loading PM template',
-      'Drafting with claude-sonnet-4',
-      'Formatting output',
-      'Saving to archive'
-    ];
+    clearThinking();
     outputBody.innerHTML = `
-      <div class="thinking">
-        <span class="bars"><span></span><span></span><span></span><span></span><span></span></span>
-        Drafting artifact
+      <div class="thinking" role="status" aria-live="polite">
+        <span class="bars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>
+        Drafting artifact…
       </div>
-      <div id="log-stream"></div>
     `;
-    let i = 0;
-    const stream = $('log-stream');
-    const tick = setInterval(() => {
-      if (i >= steps.length || !stream.isConnected) return clearInterval(tick);
-      const line = document.createElement('div');
-      line.className = 'log-line';
-      line.textContent = steps[i++];
-      stream.appendChild(line);
-    }, 600);
   }
 
   function renderError(message) {
-    outputBody.innerHTML = `<div class="err-box"><b>Error</b>${escapeHtml(message).replace(/\n/g, '<br>')}</div>`;
+    clearThinking();
+    outputBody.innerHTML = `<div class="err-box" role="alert"><b>Error</b>${escapeHtml(message).replace(/\n/g, '<br>')}</div>`;
     hideOutputActions();
   }
 
   async function renderOutput(artifact) {
+    clearThinking();
     const body = artifact.content;
     const md = marked.parse(body, { breaks: true });
     outputBody.innerHTML = `<div class="md">${md}</div>` + renderTitleBlock(artifact);
@@ -1650,6 +1899,10 @@
     const v = a.revision && a.revision > 1 ? ` · v${a.revision}` : '';
     $('refine-context').textContent = `${label}: ${a.title}${v}`;
     refineInstructions.value = '';
+    // Submit stays disabled until the user actually types refinement
+    // instructions (audit M9). Avoids the "click submit → toast says you
+    // need to type something" race.
+    refineSubmit.disabled = true;
     refineModal.classList.remove('hidden');
     setTimeout(() => refineInstructions.focus(), 50);
   }
@@ -1662,6 +1915,9 @@
   $('refine-close').addEventListener('click', closeRefine);
   $('refine-cancel').addEventListener('click', closeRefine);
   refineModal.querySelector('.modal-backdrop').addEventListener('click', closeRefine);
+  refineInstructions.addEventListener('input', () => {
+    refineSubmit.disabled = refineInstructions.value.trim().length === 0;
+  });
 
   refineSubmit.addEventListener('click', async () => {
     const instructions = refineInstructions.value.trim();
@@ -1707,15 +1963,38 @@
 
   // export artifact
   const downloadBtn = $('download-btn');
-  const downloadFormat = $('download-format');
+  // The old implementation overlaid an opacity:0 native <select> on top of
+  // the visible button. That was inaccessible for keyboard and screen
+  // reader users, and looked unstyled. We now use a proper popover menu
+  // composed of <button class="menu-item"> elements (audit M10).
+  const downloadMenu = $('download-menu');
 
   function getSafeName() {
     return (state.activeArtifact?.title || 'artifact')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
   }
 
-  downloadBtn.addEventListener('click', () => {
-    downloadFormat.classList.toggle('hidden');
+  function closeDownloadMenu() {
+    if (!downloadMenu) return;
+    downloadMenu.classList.add('hidden');
+    downloadBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  downloadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = downloadMenu.classList.contains('hidden');
+    downloadMenu.classList.toggle('hidden');
+    downloadBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  });
+
+  // Close the menu on outside click and Escape.
+  document.addEventListener('click', (e) => {
+    if (!downloadMenu || downloadMenu.classList.contains('hidden')) return;
+    if (downloadMenu.contains(e.target) || downloadBtn.contains(e.target)) return;
+    closeDownloadMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDownloadMenu();
   });
 
   // Format to extension mapping
@@ -1801,38 +2080,34 @@
     'googlesheets': '📑'
   };
 
-  // Function to update export options based on artifact type
+  // Show/hide menu items based on the current artifact type. Items that
+  // don't apply (e.g. "Jira Issues" for a retrospective) are hidden via the
+  // `hidden` HTML attribute, which CSS turns into `display: none`.
   function updateExportOptions(artifactType) {
+    if (!downloadMenu) return;
     const allowedFormats = artifactTypeFormats[artifactType] || Object.keys(formatExtensions);
-    const options = downloadFormat.querySelectorAll('option');
-    const optgroups = downloadFormat.querySelectorAll('optgroup');
-
-    // Update individual options
-    options.forEach(option => {
-      const format = option.value;
-      const shouldShow = allowedFormats.includes(format);
-      option.style.display = shouldShow ? 'block' : 'none';
-      option.disabled = !shouldShow;
+    downloadMenu.querySelectorAll('.menu-item').forEach(item => {
+      const format = item.dataset.format;
+      if (allowedFormats.includes(format)) item.removeAttribute('hidden');
+      else item.setAttribute('hidden', '');
     });
-
-    // Hide optgroups that have no visible options
-    optgroups.forEach(group => {
-      const visibleOptions = Array.from(group.querySelectorAll('option'))
-        .filter(opt => opt.style.display !== 'none');
-      group.style.display = visibleOptions.length > 0 ? 'block' : 'none';
+    // Hide group labels whose entire group is empty.
+    downloadMenu.querySelectorAll('.group-label').forEach(label => {
+      let sibling = label.nextElementSibling;
+      let anyVisible = false;
+      while (sibling && !sibling.classList.contains('group-label')) {
+        if (sibling.classList.contains('menu-item') && !sibling.hasAttribute('hidden')) {
+          anyVisible = true; break;
+        }
+        sibling = sibling.nextElementSibling;
+      }
+      label.style.display = anyVisible ? 'block' : 'none';
     });
-
-    // Reset to markdown if current selection is hidden
-    if (downloadFormat.value && !allowedFormats.includes(downloadFormat.value)) {
-      downloadFormat.value = 'markdown';
-    }
   }
 
-  downloadFormat.addEventListener('change', async () => {
-    const format = downloadFormat.value;
-    const safeName = getSafeName() || 'artifact';
+  async function downloadAs(format) {
     if (!state.activeArtifact) return;
-
+    const safeName = getSafeName() || 'artifact';
     try {
       downloadBtn.disabled = true;
       const response = await fetch(
@@ -1853,16 +2128,21 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast(`✓ Downloaded as ${format.toUpperCase()}`);
+      toast(`Downloaded as ${format.toUpperCase()}`);
     } catch (err) {
       console.error('Download error:', err);
-      toast('❌ Download failed: ' + err.message, 'error');
+      toast('Download failed: ' + err.message, 'error');
     } finally {
       downloadBtn.disabled = false;
-      downloadFormat.classList.add('hidden');
-      downloadFormat.value = 'markdown';
+      closeDownloadMenu();
     }
-  });
+  }
+
+  if (downloadMenu) {
+    downloadMenu.querySelectorAll('.menu-item').forEach(item => {
+      item.addEventListener('click', () => downloadAs(item.dataset.format));
+    });
+  }
 
 
   // ===================================================================
@@ -1955,27 +2235,26 @@
   // Mermaid is initialized by the theme switcher with theme-appropriate colors
 
   // ===================================================================
-  // METHODOLOGY TOGGLE
+  // VERSION (audit M3)
+  // The auth-footer used to hardcode "v0.6.0", which silently drifted on
+  // every bump. Now we fetch it from /api/version at boot.
   // ===================================================================
-  const methodologySelect = $('methodology-select');
-  if (methodologySelect) {
-    methodologySelect.value = getMethodology();
-    methodologySelect.addEventListener('change', () => {
-      const v = methodologySelect.value;
-      if (v && VALID_METHODOLOGIES.includes(v)) {
-        localStorage.setItem(METHODOLOGY_KEY, v);
-        toast(`Methodology set to ${v}`);
-      } else {
-        localStorage.removeItem(METHODOLOGY_KEY);
-        toast('Methodology cleared');
-      }
-    });
+  async function loadVersion() {
+    const el = $('app-version');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/version');
+      if (!r.ok) return;
+      const { version } = await r.json();
+      if (version) el.textContent = `v${version}`;
+    } catch { /* leave the placeholder; version is non-critical */ }
   }
 
   // ===================================================================
   // BOOT
   // ===================================================================
   renderFields();
+  loadVersion();
   if (state.token && state.user) {
     // verify token is still valid
     api('/api/auth/me').then(({ user }) => {
