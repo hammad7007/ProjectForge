@@ -259,10 +259,12 @@ app.get("/api/config/cli/status", authRequired, async (_req, res) => {
 // In-app Claude CLI OAuth: start a setup-token flow and return the URL the
 // user should open in their browser. The CLI subprocess stays alive in
 // memory keyed by sessionId until /submit comes back with the code.
-app.post("/api/config/cli/oauth/start", authRequired, async (_req, res) => {
+// Connect is idempotent within ~9 min — clicking it twice returns the same
+// URL so the user's older browser tab still matches the active PKCE pair.
+app.post("/api/config/cli/oauth/start", authRequired, async (req, res) => {
   try {
-    const { sessionId, url } = await startOAuthFlow();
-    res.json({ sessionId, url });
+    const { sessionId, url, reused } = await startOAuthFlow(req.user.sub);
+    res.json({ sessionId, url, reused: !!reused });
   } catch (err) {
     console.error("[oauth/start]", err.message);
     res.status(500).json({ error: err.message });

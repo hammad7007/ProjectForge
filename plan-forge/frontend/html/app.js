@@ -472,6 +472,11 @@
     // inherit the previous user's hidden state.
     const headerConnect = $('connect-claude-btn');
     if (headerConnect) headerConnect.classList.remove('hidden');
+    // Drop any in-flight OAuth tab handle.
+    if (typeof oauthPopup !== 'undefined' && oauthPopup && !oauthPopup.closed) {
+      try { oauthPopup.close(); } catch { /* ignore */ }
+    }
+    if (typeof oauthPopup !== 'undefined') oauthPopup = null;
     showAuth();
   }
 
@@ -757,6 +762,7 @@
   // CLAUDE CLI OAUTH (in-app flow)
   // ===================================================================
   let oauthSessionId = null;
+  let oauthPopup = null; // reference to the last opened browser tab, so we can re-focus instead of opening another
 
   function setOAuthStep(step) {
     const stepConnect = $('oauth-step-connect');
@@ -775,17 +781,28 @@
     btn.textContent = 'Starting…';
     setCliStatusBadge('checking', 'Asking Anthropic for the authorization URL…');
     try {
-      const { sessionId, url } = await api('/api/config/cli/oauth/start', { method: 'POST', body: '{}' });
+      const { sessionId, url, reused } = await api('/api/config/cli/oauth/start', { method: 'POST', body: '{}' });
       oauthSessionId = sessionId;
       const link = $('oauth-url-link');
       link.href = url;
       link.textContent = url;
-      // Auto-open the URL in a new tab
-      const popup = window.open(url, '_blank', 'noopener,noreferrer');
-      if (!popup) toast('Browser blocked the popup — click the URL link in the dialog instead', 'error');
+      // If we already have an open popup for an active session, focus it
+      // instead of opening another. This prevents the user from authorizing
+      // in a stale tab whose PKCE no longer matches.
+      if (oauthPopup && !oauthPopup.closed) {
+        try { oauthPopup.location.href = url; } catch { /* cross-origin after auth — fall through */ }
+        try { oauthPopup.focus(); } catch { /* ignore */ }
+      } else {
+        // Drop `noopener` so we keep a handle and can re-focus / replace on retry.
+        oauthPopup = window.open(url, '_blank');
+        if (!oauthPopup) toast('Browser blocked the popup — click the URL link in the dialog instead', 'error');
+      }
       setOAuthStep('code');
       $('oauth-code-input').focus();
-      setCliStatusBadge('checking', 'Waiting for you to authorize in the new tab…');
+      const banner = reused
+        ? 'Reusing your earlier authorization URL (still valid). Authorize in the open tab, then paste the code below.'
+        : 'Waiting for you to authorize in the new tab…';
+      setCliStatusBadge('checking', banner);
     } catch (err) {
       toast('Connect failed: ' + err.message, 'error');
       setCliStatusBadge('error', err.message);
@@ -812,6 +829,12 @@
         body: JSON.stringify({ sessionId: oauthSessionId, code, model }),
       });
       oauthSessionId = null;
+      // Connected — close the popup tab if we still have a handle, so the
+      // user isn't left with an orphaned Anthropic page.
+      if (oauthPopup && !oauthPopup.closed) {
+        try { oauthPopup.close(); } catch { /* ignore */ }
+      }
+      oauthPopup = null;
       setOAuthStep('done');
       setCliStatusBadge('ok', 'Connected.');
       toast('Claude CLI connected — provider set to claude-cli');

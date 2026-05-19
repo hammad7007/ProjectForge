@@ -9,9 +9,11 @@ const pty = require("node-pty");
 const crypto = require("crypto");
 
 const SESSION_TTL_MS = 10 * 60 * 1000;     // abandoned sessions cleaned up after 10 min
+const SESSION_REUSE_MAX_AGE_MS = 9 * 60 * 1000; // reuse a pending session if younger than this
 const URL_DETECT_TIMEOUT_MS = 20000;
 const PROMPT_DETECT_TIMEOUT_MS = 15000;    // how long to wait for "Paste code" prompt after URL
 const SUBMIT_TIMEOUT_MS = 60000;
+const CHAR_TYPE_DELAY_MS = 35;             // per-char delay when typing the code into the CLI
 
 const sessions = new Map();
 
@@ -72,7 +74,24 @@ function normalizeCode(raw) {
   return s;
 }
 
-async function startOAuthFlow() {
+async function startOAuthFlow(userId) {
+  // Reuse an existing pending session for this user when possible. Each click
+  // of Connect would otherwise spawn a new CLI subprocess with a fresh PKCE
+  // pair; if the user authorizes in an older browser tab, the code returned
+  // wouldn't match the latest session's verifier and Anthropic rejects it as
+  // "Invalid code." Idempotent connect avoids this whole class of bug.
+  const now = Date.now();
+  for (const [existingId, s] of sessions) {
+    if (s.userId !== userId) continue;
+    if (s.status !== "pending" || !s.url) continue;
+    if (now - s.createdAt < SESSION_REUSE_MAX_AGE_MS) {
+      return { sessionId: existingId, url: s.url, reused: true };
+    }
+    // Stale pending session for this user — kill it before spawning a new one.
+    try { s.pty.kill(); } catch { /* already dead */ }
+    sessions.delete(existingId);
+  }
+
   const sessionId = newSessionId();
   // Strip ANTHROPIC_API_KEY — when set with an invalid value, the CLI errors
   // out early ("Invalid API key") instead of running the OAuth flow.
@@ -93,6 +112,7 @@ async function startOAuthFlow() {
     url: null,
     status: "pending",
     createdAt: Date.now(),
+    userId: userId || null,
   };
   sessions.set(sessionId, session);
 
@@ -118,7 +138,7 @@ async function startOAuthFlow() {
       const looksComplete = url.includes("client_id=") && url.includes("redirect_uri=");
       if (looksComplete) {
         session.url = url;
-        return { sessionId, url };
+        return { sessionId, url, reused: false };
       }
     }
     await new Promise((r) => setTimeout(r, 200));
@@ -175,12 +195,14 @@ async function submitOAuthCode({ sessionId, code }) {
   // The CLI prompt masks input as `*` chars — it's a key-by-key Ink input,
   // not a paste-aware editor. Bracketed-paste markers corrupt it (escape
   // sequences leak into the code). Type the code one character at a time
-  // with small delays, like a real user typing.
+  // with small delays, like a real user typing. CHAR_TYPE_DELAY_MS gives the
+  // Ink renderer enough time to redraw between keys; 20ms was tight enough
+  // that occasional characters could be dropped on a busy container.
   for (const ch of normalized) {
     session.pty.write(ch);
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, CHAR_TYPE_DELAY_MS));
   }
-  await new Promise((r) => setTimeout(r, 150));
+  await new Promise((r) => setTimeout(r, 200));
   session.pty.write("\r");
 
   // Patterns that indicate Anthropic rejected the code — surface these
