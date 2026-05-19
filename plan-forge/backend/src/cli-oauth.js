@@ -39,9 +39,11 @@ function stripAnsi(s) {
     .replace(/\r/g, "");
 }
 
-// The CLI's "Paste code here" prompt accepts the raw code value. Extract it
-// from whatever the user pasted (URL, raw code, code#state, with/without
-// scheme, possibly percent-encoded).
+// The CLI's "Paste code here" prompt accepts the raw value from Anthropic's
+// callback. Anthropic returns the code as `CODE#STATE` (or in a URL with the
+// state in the fragment / query). The Claude CLI needs BOTH parts together —
+// stripping the `#state` half was the root cause of "Invalid code" rejections
+// after a successful authorize. Always preserve the full `code#state` form.
 function normalizeCode(raw) {
   let s = String(raw || "").trim();
   if (!s) return "";
@@ -53,19 +55,39 @@ function normalizeCode(raw) {
     try {
       const u = new URL(s);
       const code = u.searchParams.get("code");
-      if (code) return code; // URL.searchParams.get already decodes
+      if (code) {
+        // state may be in ?state=, in the fragment as #state=, or be the
+        // entire fragment after #. Re-assemble code#state if any state exists.
+        let state = u.searchParams.get("state") || "";
+        if (!state && u.hash) {
+          const hashBody = u.hash.replace(/^#/, "");
+          try {
+            const hashParams = new URLSearchParams(hashBody);
+            state = hashParams.get("state") || hashBody || "";
+          } catch {
+            state = hashBody || "";
+          }
+        }
+        return state ? `${code}#${state}` : code;
+      }
     } catch { /* fall through */ }
   }
   // Match `?code=` or `&code=` anywhere (handles no-scheme URLs, or text
-  // around a URL fragment). decodeURIComponent unescapes %2B etc.
-  const m = s.match(/[?&]code=([^&\s#]+)/);
-  if (m) {
-    try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+  // around a URL fragment). Also pick up `state=` if present.
+  const codeMatch = s.match(/[?&]code=([^&\s#]+)/);
+  if (codeMatch) {
+    let code = codeMatch[1];
+    try { code = decodeURIComponent(code); } catch { /* keep as-is */ }
+    const stateMatch = s.match(/[?&#]state=([^&\s#]+)/);
+    let state = stateMatch ? stateMatch[1] : "";
+    if (state) {
+      try { state = decodeURIComponent(state); } catch { /* keep as-is */ }
+    }
+    return state ? `${code}#${state}` : code;
   }
-  // code#state form → take just the code
+  // Bare `code#state` form — keep as-is. The CLI parses both halves itself.
   if (s.includes("#")) {
-    const [code] = s.split("#");
-    if (code) return code;
+    return s;
   }
   // Bare code with percent-encoding (rare but possible)
   if (/%[0-9A-Fa-f]{2}/.test(s)) {
@@ -177,6 +199,15 @@ async function submitOAuthCode({ sessionId, code }) {
 
   const normalized = normalizeCode(code);
   if (!normalized) throw new Error("Empty code");
+
+  // Diagnostic (no secret leakage): log shape only. Tells us at a glance
+  // whether we're sending bare code vs code#state, and whether the lengths
+  // match what Anthropic expects.
+  const hashIdx = normalized.indexOf("#");
+  const shape = hashIdx >= 0
+    ? `code#state (codeLen=${hashIdx}, stateLen=${normalized.length - hashIdx - 1})`
+    : `bare code (len=${normalized.length})`;
+  console.log(`[oauth/submit] session=${sessionId.slice(0, 8)} normalized: ${shape}`);
 
   // Wait for the prompt to actually appear before writing anything.
   const promptReady = await waitForPrompt(session, PROMPT_DETECT_TIMEOUT_MS);
