@@ -638,11 +638,21 @@
   }
 
   $('settings-btn').addEventListener('click', () => {
-    console.log('Settings button clicked');
+    // Show Save & Deploy by default each time the modal opens; the CLI status
+    // check will re-hide it if it confirms we're already authenticated.
+    configSaveBtn.classList.remove('hidden');
     loadConfig();
     settingsModal.classList.remove('hidden');
-    console.log('Modal visibility:', settingsModal.classList.contains('hidden'));
   });
+
+  // Any change to provider/model/api-key should re-show Save & Deploy, since
+  // the user is now diverging from the persisted config and may need to save.
+  function markConfigDirty() {
+    configSaveBtn.classList.remove('hidden');
+  }
+  configProvider.addEventListener('change', markConfigDirty);
+  configModel.addEventListener('change', markConfigDirty);
+  configApiKey.addEventListener('input', markConfigDirty);
 
   $('settings-close').addEventListener('click', () => {
     settingsModal.classList.add('hidden');
@@ -677,6 +687,9 @@
           if (typeof setOAuthStep === 'function') setOAuthStep('done');
           const headerConnect = $('connect-claude-btn');
           if (headerConnect) headerConnect.classList.add('hidden');
+          // Already authenticated with claude-cli → there's nothing to save
+          // here. Hide Save & Deploy until the user changes something.
+          configSaveBtn.classList.add('hidden');
         } else if (!status.installed) {
           setCliStatusBadge('not_installed', status.error || 'Binary not found in container. Rebuild backend.');
           configTestStatus.textContent = '✗ Not installed';
