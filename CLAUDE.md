@@ -148,24 +148,16 @@ All routes under `/api`. Routes marked 🔒 require `Authorization: Bearer <jwt>
 
 ## 7. Frontend conventions
 
-**Design system — the blueprint aesthetic.** Defined in `styles.css` via CSS variables. Do not introduce off-palette colors.
+**Design system source of truth: [`plan-forge/design-system/plan-forge/MASTER.md`](plan-forge/design-system/plan-forge/MASTER.md).** That file is authoritative for colors, typography, spacing, motion, anti-patterns, and the pre-delivery checklist. Read it before changing any visual code. The notes below are a fast summary — when this file and `MASTER.md` disagree, MASTER.md wins.
 
-```css
---ink: #0b1d35;        /* navy ground */
---ink-deep: #07142a;
---cyan: #7dd3fc;       /* primary accent */
---paper: #eef3f9;      /* primary text */
---paper-dim: #a8bdd3;  /* secondary text */
---ghost: #5b7496;      /* tertiary / placeholder */
---amber: #fcd34d;      /* required-field indicator */
---red: #f87171;        /* errors + destructive */
---green: #86efac;      /* "online" indicator */
-```
+**Themes:** Three are supported — `light` (default), `dark`, `midnight`. Every color must come from a CSS custom property defined in `styles.css:5-131`, never a hardcoded hex in component styles. Test all three themes before merging visual changes.
 
-Fonts (loaded from Google Fonts):
-- `DM Serif Display` — big titles and section headings in rendered output
-- `JetBrains Mono` — technical annotations, form inputs, tables in rendered markdown
-- `Work Sans` — UI body copy, paragraph text in rendered markdown
+**Fonts (Google Fonts, loaded in `index.html`):**
+- `DM Serif Display` — display headings (H1/H2 in rendered output, brand wordmark)
+- `Work Sans` — UI body, paragraphs in rendered markdown
+- `JetBrains Mono` — technical labels, panel heads, code, tables, all metadata
+
+Do not add a fourth font family. If you need another visual register, vary weight or size of an existing family.
 
 **Panel pattern.** Every card uses `.panel` + corner tick-marks:
 ```html

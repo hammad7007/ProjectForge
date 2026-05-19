@@ -34,3 +34,4 @@ pgdata/
 
 # Claude local settings (already inside .claude — don't push personal config)
 .claude/settings.local.json
+.gstack/
