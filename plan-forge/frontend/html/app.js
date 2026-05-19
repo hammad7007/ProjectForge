@@ -667,27 +667,6 @@
   }
 
   // ===================================================================
-  // METHODOLOGY SWITCHER (audit H2 — feature was wired backend-side but the
-  // UI selector existed only in CSS, never in HTML; now it lives in the
-  // header next to the theme switcher). Persisted in localStorage and
-  // forwarded to /api/artifacts on every generate/refine.
-  // ===================================================================
-  const methodologySelectEl = $('methodology-select');
-  if (methodologySelectEl) {
-    methodologySelectEl.value = getMethodology();
-    methodologySelectEl.addEventListener('change', () => {
-      const v = methodologySelectEl.value;
-      if (v && VALID_METHODOLOGIES.includes(v)) {
-        localStorage.setItem(METHODOLOGY_KEY, v);
-        toast(`Methodology set to ${v}`);
-      } else {
-        localStorage.removeItem(METHODOLOGY_KEY);
-        toast('Methodology cleared (Auto)');
-      }
-    });
-  }
-
-  // ===================================================================
   // PASSWORD SHOW/HIDE TOGGLE (audit M5)
   // The toggle button lives inside .password-wrap and references the input
   // it controls via data-toggle="<input id>".
@@ -2180,39 +2159,43 @@
   }
 
   function updateMermaidTheme(theme) {
+    // Editorial palette — cream / graphite / sepia. Mermaid takes raw hex,
+    // not CSS variables, so we mirror the tokens here. Update both this
+    // map and styles.css together when the palette changes.
     const themes = {
       light: {
-        background: '#f8fafb',
-        primaryColor: '#5b6cff',
-        primaryTextColor: '#0f172a',
-        primaryBorderColor: '#5b6cff',
-        lineColor: '#cbd5e1',
-        secondaryColor: '#eef2ff',
-        tertiaryColor: '#ffffff',
+        background: '#F1ECE2',
+        primaryColor: '#B54F0A',
+        primaryTextColor: '#0C0A09',
+        primaryBorderColor: '#B54F0A',
+        lineColor: '#A8A29E',
+        secondaryColor: '#FEF3EC',
+        tertiaryColor: '#FFFFFF',
       },
       dark: {
-        background: '#1a1f35',
-        primaryColor: '#818cf8',
-        primaryTextColor: '#f1f5f9',
-        primaryBorderColor: '#818cf8',
-        lineColor: '#64748b',
-        secondaryColor: '#312e81',
-        tertiaryColor: '#0f172a',
+        background: '#221E1A',
+        primaryColor: '#ED8936',
+        primaryTextColor: '#FAFAF7',
+        primaryBorderColor: '#ED8936',
+        lineColor: '#847D75',
+        secondaryColor: '#3F2A18',
+        tertiaryColor: '#28231F',
       },
       midnight: {
-        background: '#0f172a',
-        primaryColor: '#60a5fa',
-        primaryTextColor: '#e2e8f0',
-        primaryBorderColor: '#60a5fa',
-        lineColor: '#475569',
-        secondaryColor: '#1e3a8a',
-        tertiaryColor: '#020617',
+        background: '#F5EFE0',
+        primaryColor: '#92400E',
+        primaryTextColor: '#2D1F09',
+        primaryBorderColor: '#92400E',
+        lineColor: '#A18560',
+        secondaryColor: '#FDE9C7',
+        tertiaryColor: '#FDFBF5',
       }
     };
     try {
       mermaid.initialize({
         startOnLoad: false,
-        theme: theme === 'light' ? 'default' : 'dark',
+        // "midnight" is sepia (light), so use default theme not dark.
+        theme: theme === 'dark' ? 'dark' : 'default',
         themeVariables: themes[theme] || themes.light,
         fontFamily: "'JetBrains Mono', monospace"
       });

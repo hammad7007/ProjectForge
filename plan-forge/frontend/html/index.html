@@ -6,7 +6,7 @@
 <title>Plan Forge — Project Management Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;500;700&family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -49,7 +49,7 @@
     <div class="auth-masthead">
       <div class="emblem">✦</div>
       <h1>Plan <em>Forge</em>.</h1>
-      <p class="subtitle">Project Management · Drafting Console</p>
+      <p class="subtitle">the drafting studio</p>
     </div>
 
     <div class="panel">
@@ -109,9 +109,9 @@
       <span>Plan Forge · <span id="app-version">v0.0.0</span></span>
       <span class="divider"></span>
       <div class="theme-switcher" style="margin-top: 12px;">
-        <button class="theme-btn active" data-theme="light" title="Light Theme" aria-label="Light theme"><svg class="icon" aria-hidden="true"><use href="#i-sun"></use></svg></button>
-        <button class="theme-btn" data-theme="dark" title="Dark Theme" aria-label="Dark theme"><svg class="icon" aria-hidden="true"><use href="#i-moon"></use></svg></button>
-        <button class="theme-btn" data-theme="midnight" title="Midnight Theme" aria-label="Midnight theme"><svg class="icon" aria-hidden="true"><use href="#i-stars"></use></svg></button>
+        <button class="theme-btn active" data-theme="light" title="Cream" aria-label="Cream theme"><svg class="icon" aria-hidden="true"><use href="#i-sun"></use></svg></button>
+        <button class="theme-btn" data-theme="dark" title="Graphite" aria-label="Graphite theme"><svg class="icon" aria-hidden="true"><use href="#i-moon"></use></svg></button>
+        <button class="theme-btn" data-theme="midnight" title="Sepia" aria-label="Sepia theme"><svg class="icon" aria-hidden="true"><use href="#i-stars"></use></svg></button>
       </div>
     </div>
   </div>
@@ -126,26 +126,15 @@
         <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
       </button>
       <span class="brand-mark">Plan <em>Forge</em>.</span>
-      <span class="brand-tag">PM Drafting Console</span>
+      <span class="brand-tag">the drafting studio</span>
     </div>
     <div class="session">
       <span class="user"><span class="dot"></span><span id="user-email">—</span></span>
 
-      <span class="methodology-switcher" title="Project management methodology — threaded into every prompt">
-        <span class="label-mini">Method</span>
-        <select id="methodology-select" aria-label="Project management methodology">
-          <option value="">Auto</option>
-          <option value="PMBOK">PMBOK</option>
-          <option value="Agile">Agile</option>
-          <option value="PRINCE2">PRINCE2</option>
-          <option value="Hybrid">Hybrid</option>
-        </select>
-      </span>
-
       <div class="theme-switcher">
-        <button class="theme-btn active" data-theme="light" title="Light Theme" aria-label="Light theme"><svg class="icon" aria-hidden="true"><use href="#i-sun"></use></svg></button>
-        <button class="theme-btn" data-theme="dark" title="Dark Theme" aria-label="Dark theme"><svg class="icon" aria-hidden="true"><use href="#i-moon"></use></svg></button>
-        <button class="theme-btn" data-theme="midnight" title="Midnight Theme" aria-label="Midnight theme"><svg class="icon" aria-hidden="true"><use href="#i-stars"></use></svg></button>
+        <button class="theme-btn active" data-theme="light" title="Cream" aria-label="Cream theme"><svg class="icon" aria-hidden="true"><use href="#i-sun"></use></svg></button>
+        <button class="theme-btn" data-theme="dark" title="Graphite" aria-label="Graphite theme"><svg class="icon" aria-hidden="true"><use href="#i-moon"></use></svg></button>
+        <button class="theme-btn" data-theme="midnight" title="Sepia" aria-label="Sepia theme"><svg class="icon" aria-hidden="true"><use href="#i-stars"></use></svg></button>
       </div>
       <button class="btn btn-ghost btn-sm" id="connect-claude-btn" title="Connect this app to your Claude subscription">
         <svg class="icon" aria-hidden="true"><use href="#i-plug"></use></svg> Connect Claude
