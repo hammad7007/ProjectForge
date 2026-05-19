@@ -36,8 +36,15 @@ function runClaudeCli({ systemPrompt, userMsg, model, timeoutMs }) {
       ? `${systemPrompt}\n\n---\n\n${userMsg}`
       : userMsg;
 
+    // CRITICAL: strip ANTHROPIC_API_KEY from the subprocess env. The Claude CLI
+    // prioritizes that env var over the OAuth token in ~/.claude.json — so if
+    // the env var is invalid (or even set at all when the user wants subscription
+    // auth), every call fails with "Invalid API key" even though OAuth is fine.
+    const subprocEnv = { ...process.env };
+    delete subprocEnv.ANTHROPIC_API_KEY;
+
     const child = spawn(DEFAULT_BINARY, args, {
-      env: { ...process.env },
+      env: subprocEnv,
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -77,7 +84,7 @@ function runClaudeCli({ systemPrompt, userMsg, model, timeoutMs }) {
       const combinedErr = (stderr + stdout).slice(0, 1000);
       if (looksLikeAuthError(combinedErr)) {
         reject(new Error(
-          "Claude CLI is not authenticated. Run: docker compose exec backend claude /login"
+          "Claude CLI is not authenticated. Click '🔌 Connect Claude' in the header to sign in with your subscription."
         ));
       } else {
         const detail = (stderr || stdout).slice(0, 400).trim();

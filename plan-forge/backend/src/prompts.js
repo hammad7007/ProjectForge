@@ -612,28 +612,34 @@ function buildExtractionPrompt(artifactType, rawText) {
   const fieldDescriptions = fields.map(describeField).join("\n");
   const keyList = fields.map(f => `"${f.id}"`).join(", ");
 
-  return `You are extracting structured project-management data from a document so a form can be auto-filled.
+  return `You are inspecting a document and extracting structured project-management data so a form can be auto-filled.
 
 Document text:
 ---
 ${rawText}
 ---
 
-Extract the following fields for a "${artifactType}" artifact. Return ONLY a single JSON object — no preamble, no markdown fences, no commentary.
+The user has selected the artifact type "${artifactType}". First decide whether the document is plausibly about a project that could produce a "${artifactType}" artifact. The document should contain project, program, product, or initiative context (scope, stakeholders, deliverables, dates, risks, team, sponsor, decisions, requirements, etc.) — not just an unrelated document like a recipe, a personal letter, source code, a marketing flyer, or a generic essay.
 
-Rules:
+Return ONLY a single JSON object — no preamble, no markdown fences, no commentary — with the following shape:
+
+{
+  "relevant": true | false,
+  "mismatch_reason": "<empty string if relevant, otherwise a single short sentence the user-facing UI can show explaining what kind of document this looks like and why it does not fit a ${artifactType}>",
+  "fields": { ${keyList}: "..." }
+}
+
+Rules for the "fields" object:
 - Use the exact key names listed below.
 - If a field cannot be found in the document, return "" (empty string) for that key. Do NOT invent data.
 - For "select" fields, the value MUST be one of the listed allowed values, character-for-character. If the document hints at a value but doesn't match any option exactly, pick the single closest option.
 - For "date" fields, output YYYY-MM-DD; convert if needed.
 - For "number" fields, output digits only — strip currency symbols, commas, and units.
 - For "text" / "textarea" fields, keep the value concise (the form has length limits). Prefer paraphrasing over verbatim copies of long passages.
+- If "relevant" is false, still return the "fields" object with every key present and an empty string value (so the schema is stable).
 
 Fields to extract:
-${fieldDescriptions}
-
-Output format: a single JSON object whose keys are exactly ${keyList}.
-Example shape: {"field_id_1": "value", "field_id_2": ""}`;
+${fieldDescriptions}`;
 }
 
 const VALID_METHODOLOGIES = ["PMBOK", "Agile", "PRINCE2", "Hybrid"];
@@ -649,7 +655,7 @@ function methodologyContext(methodology) {
   return `\nMethodology context: ${methodology}. ${guidance[methodology]}\n`;
 }
 
-function buildUserPrompt(artifactType, inputs, methodology) {
+function buildUserPrompt(artifactType, inputs, methodology, sourceDocument) {
   const instruction = INSTRUCTIONS[artifactType];
   if (!instruction) throw new Error(`unknown artifact type: ${artifactType}`);
 
@@ -658,13 +664,18 @@ function buildUserPrompt(artifactType, inputs, methodology) {
     .map(([k, v]) => `- ${k}: ${v}`)
     .join("\n");
 
+  const sourceBlock =
+    sourceDocument && String(sourceDocument).trim()
+      ? `Source document (verbatim user-uploaded content — treat as authoritative project context, prefer its facts over generic assumptions, do NOT quote it back unless asked):\n---\n${String(sourceDocument).slice(0, 12000)}\n---\n\n`
+      : "";
+
   const contextBlock =
     `User-provided context:\n\n` +
     (filled || "(no additional fields — infer reasonable defaults and note them)") +
     methodologyContext(methodology) +
     "\n\n";
 
-  return contextBlock + instruction;
+  return sourceBlock + contextBlock + instruction;
 }
 
 function buildRevisePrompt(artifactType, inputs, previousContent, instructions, methodology) {

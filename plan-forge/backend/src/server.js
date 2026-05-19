@@ -12,6 +12,7 @@ const fs = require("fs");
 const { pool, initDb } = require("./db");
 const { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES } = require("./prompts");
 const { runClaudeCli, checkClaudeCli } = require("./cli");
+const { startOAuthFlow, submitOAuthCode } = require("./cli-oauth");
 
 function normalizeMethodology(m) {
   if (typeof m !== "string") return null;
@@ -145,14 +146,19 @@ app.get("/api/config", async (req, res) => {
 app.post("/api/config", async (req, res) => {
   const { provider, model, api_key } = req.body || {};
 
-  if (!provider || !model) {
-    return res.status(400).json({ error: "provider and model required" });
+  if (!provider) {
+    return res.status(400).json({ error: "provider required" });
   }
   // claude-cli uses subscription OAuth via `claude /login`, no API key needed
+  // and accepts an empty model (CLI picks its own default).
+  if (provider !== "claude-cli" && !model) {
+    return res.status(400).json({ error: "model required" });
+  }
   if (provider !== "claude-cli" && !api_key) {
     return res.status(400).json({ error: "api_key required for this provider" });
   }
   const storedKey = provider === "claude-cli" ? "" : api_key;
+  const storedModel = provider === "claude-cli" ? (model || "") : model;
 
   try {
     const { rows } = await pool.query(
@@ -163,16 +169,16 @@ app.post("/api/config", async (req, res) => {
       await pool.query(
         `UPDATE llm_config SET provider = $1, model = $2, api_key = $3, updated_at = NOW()
          WHERE id = $4`,
-        [provider, model, storedKey, rows[0].id]
+        [provider, storedModel, storedKey, rows[0].id]
       );
     } else {
       await pool.query(
         `INSERT INTO llm_config (provider, model, api_key) VALUES ($1, $2, $3)`,
-        [provider, model, storedKey]
+        [provider, storedModel, storedKey]
       );
     }
 
-    res.json({ ok: true, config: { provider, model } });
+    res.json({ ok: true, config: { provider, model: storedModel } });
   } catch (err) {
     console.error("[save config]", err);
     res.status(500).json({ error: "failed to save config" });
@@ -250,12 +256,70 @@ app.get("/api/config/cli/status", authRequired, async (_req, res) => {
   res.json(status);
 });
 
+// In-app Claude CLI OAuth: start a setup-token flow and return the URL the
+// user should open in their browser. The CLI subprocess stays alive in
+// memory keyed by sessionId until /submit comes back with the code.
+app.post("/api/config/cli/oauth/start", authRequired, async (_req, res) => {
+  try {
+    const { sessionId, url } = await startOAuthFlow();
+    res.json({ sessionId, url });
+  } catch (err) {
+    console.error("[oauth/start]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Submit the code the user pasted from Anthropic's authorization page.
+// On success, also write provider=claude-cli into llm_config so the app
+// starts using it immediately.
+app.post("/api/config/cli/oauth/submit", authRequired, async (req, res) => {
+  const { sessionId, code, model } = req.body || {};
+  if (!sessionId || !code) {
+    return res.status(400).json({ error: "sessionId and code required" });
+  }
+  try {
+    const result = await submitOAuthCode({ sessionId, code });
+    // Auto-save claude-cli as the active provider so the app starts using it.
+    const finalModel = (model && String(model).trim()) || "";
+    try {
+      const { rows } = await pool.query(
+        `SELECT id FROM llm_config ORDER BY updated_at DESC LIMIT 1`
+      );
+      if (rows.length) {
+        await pool.query(
+          `UPDATE llm_config SET provider = $1, model = $2, api_key = $3, updated_at = NOW() WHERE id = $4`,
+          ["claude-cli", finalModel, "", rows[0].id]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO llm_config (provider, model, api_key) VALUES ($1, $2, $3)`,
+          ["claude-cli", finalModel, ""]
+        );
+      }
+    } catch (dbErr) {
+      console.error("[oauth/submit: save config]", dbErr.message);
+      // Auth succeeded, just config persist failed — still a partial win
+      return res.json({ success: true, configSaved: false, warning: dbErr.message });
+    }
+    res.json({ success: true, configSaved: true, output: result.output });
+  } catch (err) {
+    console.error("[oauth/submit]", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.post("/api/config/restart", async (req, res) => {
   res.json({ ok: true, message: "backend restarting..." });
   setTimeout(() => process.exit(0), 500);
 });
 
 // ------- document extraction -------
+// Supported upload extensions and a friendly label list for error messages.
+const SUPPORTED_UPLOAD_EXTS = new Set([
+  ".pdf", ".docx", ".xlsx", ".xls", ".csv", ".txt", ".md", ".rtf", ".json", ".html", ".htm"
+]);
+const SUPPORTED_UPLOAD_LABEL = "PDF, Word (.docx), Excel (.xlsx/.xls), CSV, TXT, Markdown, RTF, JSON, HTML";
+
 app.post("/api/extract", authRequired, upload.single("file"), async (req, res) => {
   const { artifact_type } = req.body || {};
   const file = req.file;
@@ -270,19 +334,40 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
     let rawText = "";
     const ext = path.extname(file.originalname).toLowerCase();
 
+    if (!SUPPORTED_UPLOAD_EXTS.has(ext)) {
+      return res.status(415).json({
+        error: `unsupported file type "${ext || file.originalname}". Supported: ${SUPPORTED_UPLOAD_LABEL}.`
+      });
+    }
+
     if (ext === ".pdf") {
       const data = await pdfParse(file.buffer);
       rawText = data.text;
     } else if (ext === ".docx") {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
       rawText = result.value;
-    } else if ([".xlsx", ".xls"].includes(ext)) {
+    } else if (ext === ".xlsx" || ext === ".xls") {
       const wb = xlsx.read(file.buffer, { type: "buffer" });
       rawText = wb.SheetNames.map(name => {
         return xlsx.utils.sheet_to_csv(wb.Sheets[name]);
       }).join("\n\n");
+    } else if (ext === ".html" || ext === ".htm") {
+      // Strip tags so the LLM sees readable prose, not markup noise.
+      rawText = file.buffer.toString("utf-8")
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/\s+/g, " ");
+    } else if (ext === ".rtf") {
+      // Naive RTF stripping — drop control words and braces, keep the text payload.
+      rawText = file.buffer.toString("utf-8")
+        .replace(/\\par[d]?/g, "\n")
+        .replace(/\\'[0-9a-fA-F]{2}/g, " ")
+        .replace(/\\[a-zA-Z]+-?\d* ?/g, "")
+        .replace(/[{}]/g, "");
     } else {
-      // .csv, .txt, .md, and anything else — best-effort UTF-8
+      // .csv, .txt, .md, .json — UTF-8 text
       rawText = file.buffer.toString("utf-8");
     }
 
@@ -415,15 +500,39 @@ app.post("/api/extract", authRequired, upload.single("file"), async (req, res) =
       return res.status(422).json({ error: "model did not return JSON — please try again" });
     }
 
-    let fields;
+    let parsed;
     try {
-      fields = JSON.parse(jsonMatch[0]);
+      parsed = JSON.parse(jsonMatch[0]);
     } catch (parseErr) {
       console.error("[extract] JSON parse error:", parseErr.message, "raw:", jsonMatch[0].slice(0, 500));
       return res.status(422).json({ error: "could not parse extraction response as JSON" });
     }
 
-    res.json({ fields });
+    // Backwards compat: if the model returned the old flat-fields shape, treat
+    // it as relevant=true and use the object as `fields` directly.
+    let relevant, mismatchReason, fields;
+    if (parsed && typeof parsed === "object" && "relevant" in parsed && "fields" in parsed) {
+      relevant = parsed.relevant !== false; // anything truthy or missing → relevant
+      mismatchReason = String(parsed.mismatch_reason || "").trim();
+      fields = parsed.fields && typeof parsed.fields === "object" ? parsed.fields : {};
+    } else {
+      relevant = true;
+      mismatchReason = "";
+      fields = parsed && typeof parsed === "object" ? parsed : {};
+    }
+
+    if (!relevant) {
+      return res.status(422).json({
+        error: "document_mismatch",
+        mismatch_reason: mismatchReason || `This document does not appear to fit a "${artifact_type}" artifact.`,
+        artifact_type,
+        filename: file.originalname,
+      });
+    }
+
+    // Return the rawText so the frontend can forward it back as source_document
+    // when the user clicks Generate — Claude then sees the original document.
+    res.json({ fields, source_document: rawText });
   } catch (err) {
     console.error("[extract]", err);
     res.status(500).json({ error: err.message || "extraction failed" });
@@ -1598,14 +1707,19 @@ app.post("/api/artifacts/:id/revise", authRequired, async (req, res) => {
 
 // generate + save
 app.post("/api/artifacts", authRequired, async (req, res) => {
-  const { artifact_type, title, inputs, methodology } = req.body || {};
+  const { artifact_type, title, inputs, methodology, source_document } = req.body || {};
 
   if (!VALID_TYPES.includes(artifact_type))
     return res.status(400).json({ error: "invalid artifact_type" });
   if (!inputs || typeof inputs !== "object")
     return res.status(400).json({ error: "inputs object required" });
 
-  const userMsg = buildUserPrompt(artifact_type, inputs, normalizeMethodology(methodology));
+  const safeSourceDocument =
+    typeof source_document === "string" && source_document.trim()
+      ? source_document.slice(0, 12000)
+      : null;
+
+  const userMsg = buildUserPrompt(artifact_type, inputs, normalizeMethodology(methodology), safeSourceDocument);
 
   // fetch config from database
   let configRows, provider, model, apiKey;

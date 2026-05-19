@@ -92,21 +92,12 @@
     </div>
     <div class="session">
       <span class="user"><span class="dot"></span><span id="user-email">—</span></span>
-      <div class="methodology-switcher" title="Project methodology — threads terminology into prompts">
-        <span class="methodology-label">METHOD</span>
-        <select id="methodology-select">
-          <option value="">— none —</option>
-          <option value="PMBOK">PMBOK</option>
-          <option value="Agile">Agile</option>
-          <option value="PRINCE2">PRINCE2</option>
-          <option value="Hybrid">Hybrid</option>
-        </select>
-      </div>
       <div class="theme-switcher">
         <button class="theme-btn active" data-theme="light" title="Light Theme">☀️</button>
         <button class="theme-btn" data-theme="dark" title="Dark Theme">🌙</button>
         <button class="theme-btn" data-theme="midnight" title="Midnight Theme">⭐</button>
       </div>
+      <button class="btn btn-ghost btn-sm" id="connect-claude-btn" title="Connect this app to your Claude subscription">🔌 Connect Claude</button>
       <button class="btn btn-ghost btn-sm" id="settings-btn">⚙ Settings</button>
       <button class="btn btn-ghost btn-sm" id="logout-btn">Sign Out</button>
     </div>
@@ -177,11 +168,30 @@
               <span id="cli-status-badge" style="font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--ghost); color: var(--ink-deep);">unknown</span>
             </div>
             <p style="color: var(--paper-dim); font-size: 12px; margin: 6px 0 10px;">
-              The Claude CLI is installed in the backend container. Authenticate it once with your
-              Claude subscription via this command on the host machine:
+              Sign in once with your Claude subscription — no API key required. Authentication runs entirely in-app.
             </p>
-            <code style="display: block; padding: 8px 10px; background: var(--ink-deep); color: var(--cyan); font-size: 12px; border-radius: 4px; margin-bottom: 8px;">docker compose exec backend claude /login</code>
-            <small id="cli-status-detail" style="color: var(--paper-dim); display: block; margin-top: 4px;">Click "Check CLI Status" to verify.</small>
+
+            <!-- step 1: not connected yet → show Connect button -->
+            <div id="oauth-step-connect">
+              <button class="btn btn-sm" id="oauth-connect-btn" style="margin-bottom: 6px;">▸ Connect with Claude</button>
+              <small id="cli-status-detail" style="color: var(--paper-dim); display: block;">Click "Check CLI Status" to verify, or "Connect" to authenticate now.</small>
+            </div>
+
+            <!-- step 2: URL received → show URL + code input -->
+            <div id="oauth-step-code" class="hidden">
+              <p style="color: var(--paper); font-size: 13px; margin: 4px 0 6px;"><strong>Step 1.</strong> A browser tab just opened to Anthropic's authorization page. If it didn't open, <a id="oauth-url-link" href="#" target="_blank" rel="noopener" style="color: var(--cyan); text-decoration: underline;">click here</a>.</p>
+              <p style="color: var(--paper); font-size: 13px; margin: 10px 0 6px;"><strong>Step 2.</strong> After clicking <em>Authorize</em>, you'll land on a page showing a code (or a URL containing one). Copy the <strong>full URL from the address bar</strong> or just the code, and paste it below:</p>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <input type="text" id="oauth-code-input" placeholder="Paste the full callback URL or just the code…" style="flex: 1; padding: 8px 10px; font-family: var(--font-mono); font-size: 12px;" />
+                <button class="btn btn-sm" id="oauth-submit-btn">Authenticate</button>
+              </div>
+              <small id="oauth-submit-status" style="color: var(--paper-dim); display: block; margin-top: 6px; white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; padding: 8px 10px; background: rgba(0,0,0,0.04); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; line-height: 1.4;"></small>
+            </div>
+
+            <!-- step 3: success -->
+            <div id="oauth-step-done" class="hidden">
+              <small style="color: var(--green); display: block;">✓ Connected. Provider has been set to Claude CLI automatically.</small>
+            </div>
           </div>
 
           <div style="margin-top: 16px; display: flex; gap: 8px;">
@@ -193,6 +203,34 @@
       <div class="modal-footer">
         <button class="btn btn-ghost btn-sm" id="settings-cancel">Cancel</button>
         <button class="btn btn-sm" id="config-save-btn">Save & Deploy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- document mismatch modal: shown when an uploaded file doesn't fit the selected artifact type -->
+  <div id="doc-mismatch-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Document doesn't match</h2>
+        <button class="modal-close" id="doc-mismatch-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <p class="lead" style="margin-top: 0;">
+            <strong id="doc-mismatch-filename">this document</strong>
+            doesn't look like a fit for
+            <strong id="doc-mismatch-type">the selected artifact</strong>.
+          </p>
+          <p id="doc-mismatch-reason" style="color: var(--paper-dim); white-space: pre-wrap;"></p>
+          <small style="color: var(--paper-dim); display: block; margin-top: 8px;">
+            No fields were auto-filled and the document will not be sent to Claude. Try a different file, or switch the artifact type to match this document.
+          </small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost btn-sm" id="doc-mismatch-cancel">Cancel</button>
+        <button class="btn btn-sm" id="doc-mismatch-retry">▸ Try a different document</button>
       </div>
     </div>
   </div>
@@ -272,7 +310,7 @@
             </button>
             <span class="upload-hint" id="upload-hint"></span>
             <input type="file" id="upload-file-input"
-              accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md"
+              accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.rtf,.json,.html,.htm"
               style="display:none" />
           </div>
 

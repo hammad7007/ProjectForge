@@ -372,6 +372,10 @@
     user: JSON.parse(localStorage.getItem(USER_KEY) || 'null'),
     artifacts: [],      // list of {id, artifact_type, title, created_at}
     activeArtifact: null, // full artifact when viewing a saved one
+    // Source document state: when the user uploads + extracts a doc, we keep
+    // its text and metadata so the next /api/artifacts call can forward the
+    // doc to the LLM as authoritative project context.
+    uploadedDoc: null,        // { name, type, text }
   };
 
   // ===================================================================
@@ -424,6 +428,29 @@
     $('app-view').classList.remove('hidden');
     $('user-email').textContent = state.user?.email || '—';
     loadArtifacts();
+    refreshHeaderConnectVisibility();
+  }
+
+  // Hide the header "🔌 Connect Claude" button when the user is already
+  // signed in to the Claude CLI (it would just send them through OAuth again).
+  // Shown otherwise so a fresh user has an obvious entry point.
+  async function refreshHeaderConnectVisibility() {
+    const btn = $('connect-claude-btn');
+    if (!btn) return;
+    try {
+      const { config } = await api('/api/config');
+      if (config && config.provider === 'claude-cli') {
+        const status = await api('/api/config/cli/status').catch(() => null);
+        if (status && status.authenticated) {
+          btn.classList.add('hidden');
+          return;
+        }
+      }
+      btn.classList.remove('hidden');
+    } catch {
+      // If we can't fetch config, leave the button visible — fail open.
+      btn.classList.remove('hidden');
+    }
   }
 
   function setSession(token, user) {
@@ -438,8 +465,13 @@
     state.user = null;
     state.artifacts = [];
     state.activeArtifact = null;
+    state.uploadedDoc = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    // Restore the header connect button — the next signed-in user shouldn't
+    // inherit the previous user's hidden state.
+    const headerConnect = $('connect-claude-btn');
+    if (headerConnect) headerConnect.classList.remove('hidden');
     showAuth();
   }
 
@@ -556,6 +588,8 @@
       apiKeyRow.classList.add('hidden');
       cliRow.classList.remove('hidden');
       configTestBtn.textContent = 'Check CLI Status';
+      // Reset the OAuth panel to its initial step every time claude-cli is selected
+      if (typeof setOAuthStep === 'function') setOAuthStep('connect');
     } else {
       apiKeyRow.classList.remove('hidden');
       cliRow.classList.add('hidden');
@@ -633,14 +667,21 @@
           setCliStatusBadge('ok', `Ready. CLI replied: "${(status.response || '').slice(0, 80)}"`);
           configTestStatus.textContent = '✓ CLI ready';
           configTestStatus.style.color = 'var(--green)';
+          // Already signed in: hide the Connect button (and the global header
+          // Connect Claude button) so we don't prompt re-auth for no reason.
+          if (typeof setOAuthStep === 'function') setOAuthStep('done');
+          const headerConnect = $('connect-claude-btn');
+          if (headerConnect) headerConnect.classList.add('hidden');
         } else if (!status.installed) {
           setCliStatusBadge('not_installed', status.error || 'Binary not found in container. Rebuild backend.');
           configTestStatus.textContent = '✗ Not installed';
           configTestStatus.style.color = 'var(--red)';
+          if (typeof setOAuthStep === 'function') setOAuthStep('connect');
         } else {
           setCliStatusBadge('not_authed', status.error || 'Run `claude /login` inside the backend container.');
           configTestStatus.textContent = '⚠ Not logged in';
           configTestStatus.style.color = 'var(--amber)';
+          if (typeof setOAuthStep === 'function') setOAuthStep('connect');
         }
       } catch (err) {
         setCliStatusBadge('error', err.message);
@@ -711,6 +752,107 @@
       configTestBtn.disabled = false;
     }
   });
+
+  // ===================================================================
+  // CLAUDE CLI OAUTH (in-app flow)
+  // ===================================================================
+  let oauthSessionId = null;
+
+  function setOAuthStep(step) {
+    const stepConnect = $('oauth-step-connect');
+    const stepCode    = $('oauth-step-code');
+    const stepDone    = $('oauth-step-done');
+    if (!stepConnect) return; // panel not in DOM yet
+    [stepConnect, stepCode, stepDone].forEach(el => el && el.classList.add('hidden'));
+    if (step === 'connect') stepConnect.classList.remove('hidden');
+    else if (step === 'code') stepCode.classList.remove('hidden');
+    else if (step === 'done') stepDone.classList.remove('hidden');
+  }
+
+  async function startOAuthFlow() {
+    const btn = $('oauth-connect-btn');
+    btn.disabled = true;
+    btn.textContent = 'Starting…';
+    setCliStatusBadge('checking', 'Asking Anthropic for the authorization URL…');
+    try {
+      const { sessionId, url } = await api('/api/config/cli/oauth/start', { method: 'POST', body: '{}' });
+      oauthSessionId = sessionId;
+      const link = $('oauth-url-link');
+      link.href = url;
+      link.textContent = url;
+      // Auto-open the URL in a new tab
+      const popup = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!popup) toast('Browser blocked the popup — click the URL link in the dialog instead', 'error');
+      setOAuthStep('code');
+      $('oauth-code-input').focus();
+      setCliStatusBadge('checking', 'Waiting for you to authorize in the new tab…');
+    } catch (err) {
+      toast('Connect failed: ' + err.message, 'error');
+      setCliStatusBadge('error', err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '▸ Connect with Claude';
+    }
+  }
+
+  async function submitOAuthCode() {
+    if (!oauthSessionId) { toast('No active OAuth session', 'error'); return; }
+    const code = $('oauth-code-input').value.trim();
+    if (!code) { toast('Paste the code from Anthropic first', 'error'); return; }
+    const btn = $('oauth-submit-btn');
+    const status = $('oauth-submit-status');
+    btn.disabled = true;
+    btn.textContent = 'Authenticating…';
+    status.textContent = '';
+    status.style.display = 'none';
+    try {
+      const model = configModel.value || '';
+      await api('/api/config/cli/oauth/submit', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: oauthSessionId, code, model }),
+      });
+      oauthSessionId = null;
+      setOAuthStep('done');
+      setCliStatusBadge('ok', 'Connected.');
+      toast('Claude CLI connected — provider set to claude-cli');
+      // Now that we're signed in, drop the header reauth button.
+      const headerConnect = $('connect-claude-btn');
+      if (headerConnect) headerConnect.classList.add('hidden');
+      // Refresh /api/config so the next time the modal opens we reflect the new active provider
+      setTimeout(() => { settingsModal.classList.add('hidden'); }, 1200);
+    } catch (err) {
+      status.textContent = '✗ ' + err.message;
+      status.style.color = 'var(--red)';
+      status.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Authenticate';
+    }
+  }
+
+  // Wire OAuth buttons (panel exists from page load, hidden until claude-cli is chosen)
+  const oauthConnectBtn = $('oauth-connect-btn');
+  if (oauthConnectBtn) oauthConnectBtn.addEventListener('click', startOAuthFlow);
+  const oauthSubmitBtn = $('oauth-submit-btn');
+  if (oauthSubmitBtn) oauthSubmitBtn.addEventListener('click', submitOAuthCode);
+  const oauthCodeInput = $('oauth-code-input');
+  if (oauthCodeInput) oauthCodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitOAuthCode(); }
+  });
+
+  // Header "Connect Claude" button: open settings modal with claude-cli pre-selected
+  const connectClaudeBtn = $('connect-claude-btn');
+  if (connectClaudeBtn) {
+    connectClaudeBtn.addEventListener('click', async () => {
+      await loadConfig();
+      configProvider.value = 'claude-cli';
+      updateModelOptions();
+      // Reset OAuth UI to step 1 every time the modal opens via this button
+      setOAuthStep('connect');
+      oauthSessionId = null;
+      settingsModal.classList.remove('hidden');
+    });
+  }
 
   // ===================================================================
   // DYNAMIC FORM FIELDS
@@ -945,9 +1087,14 @@
       exitEditMode(true);
     }
     state.activeArtifact = null;
+    state.uploadedDoc = null;
     renderArchive();
     resetOutput();
     dynWrap.querySelectorAll('input, textarea').forEach(el => el.value = '');
+    if (uploadHint) {
+      uploadHint.textContent = '';
+      uploadHint.style.color = '';
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
@@ -973,13 +1120,22 @@
     renderThinking();
 
     try {
+      // Forward the uploaded source document iff it matches the currently
+      // selected artifact type. If the user switched type after uploading,
+      // drop it rather than confuse the model with a doc about something else.
+      const docForType =
+        state.uploadedDoc && state.uploadedDoc.type === type
+          ? state.uploadedDoc.text
+          : undefined;
+
       const { artifact } = await api('/api/artifacts', {
         method: 'POST',
         body: JSON.stringify({
           artifact_type: type,
           title: inferTitle(type, inputs),
           inputs,
-          methodology: getMethodology() || undefined
+          methodology: getMethodology() || undefined,
+          source_document: docForType
         })
       });
       state.activeArtifact = artifact;
@@ -1060,6 +1216,36 @@
     return s;
   }
 
+  function showDocMismatchDialog({ filename, artifactType, reason }) {
+    const modal = $('doc-mismatch-modal');
+    if (!modal) return;
+    $('doc-mismatch-filename').textContent = filename || 'this document';
+    $('doc-mismatch-type').textContent = (TYPE_LABEL[artifactType] || artifactType || 'the selected artifact');
+    $('doc-mismatch-reason').textContent = reason || 'It does not look like a project document that fits the selected artifact type.';
+    modal.classList.remove('hidden');
+  }
+
+  function closeDocMismatchDialog() {
+    const modal = $('doc-mismatch-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  // Wire the mismatch dialog dismiss buttons once (modal stays in the DOM).
+  ['doc-mismatch-close', 'doc-mismatch-cancel'].forEach(id => {
+    const btn = $(id);
+    if (btn) btn.addEventListener('click', closeDocMismatchDialog);
+  });
+  const docMismatchBackdrop = document.querySelector('#doc-mismatch-modal .modal-backdrop');
+  if (docMismatchBackdrop) docMismatchBackdrop.addEventListener('click', closeDocMismatchDialog);
+  const docMismatchRetryBtn = $('doc-mismatch-retry');
+  if (docMismatchRetryBtn) {
+    docMismatchRetryBtn.addEventListener('click', () => {
+      closeDocMismatchDialog();
+      uploadFileInput.value = '';
+      uploadFileInput.click();
+    });
+  }
+
   uploadFileInput.addEventListener('change', async () => {
     const file = uploadFileInput.files[0];
     if (!file) return;
@@ -1080,12 +1266,36 @@
         body: formData
       });
 
+      const body = await res.json().catch(() => ({}));
+
+      // Document-mismatch path: backend confirmed the doc doesn't fit the
+      // selected artifact type. Show a dialog instead of a toast so the user
+      // can read the reason and choose to try a different file.
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Extraction failed (HTTP ${res.status})`);
+        if (res.status === 422 && body && body.error === 'document_mismatch') {
+          // Wipe any prior uploaded doc — we don't want a mismatched doc
+          // leaking into the next generation.
+          state.uploadedDoc = null;
+          uploadHint.textContent = `✗ ${file.name} doesn't fit "${TYPE_LABEL[type] || type}"`;
+          uploadHint.style.color = 'var(--red)';
+          showDocMismatchDialog({
+            filename: body.filename || file.name,
+            artifactType: body.artifact_type || type,
+            reason: body.mismatch_reason,
+          });
+          return;
+        }
+        throw new Error((body && body.error) || `Extraction failed (HTTP ${res.status})`);
       }
 
-      const { fields } = await res.json();
+      const { fields, source_document: sourceDoc } = body;
+
+      // Persist the document text so Generate forwards it to the LLM.
+      if (sourceDoc && String(sourceDoc).trim()) {
+        state.uploadedDoc = { name: file.name, type, text: String(sourceDoc) };
+      } else {
+        state.uploadedDoc = null;
+      }
 
       let filled = 0;
       let skipped = 0;
@@ -1114,16 +1324,23 @@
       });
 
       const skippedNote = skipped > 0 ? ` (${skipped} skipped — no good match)` : '';
+      const docNote = state.uploadedDoc ? ' · document attached to next generation' : '';
       if (filled === 0) {
-        uploadHint.textContent = `⚠ Read ${file.name} but nothing matched the form fields${skippedNote}`;
-        uploadHint.style.color = 'var(--amber)';
-        toast('Document read, but no fields could be auto-filled', 'error');
+        uploadHint.textContent = `⚠ Read ${file.name} but nothing matched the form fields${skippedNote}${docNote}`;
+        uploadHint.style.color = state.uploadedDoc ? 'var(--amber)' : 'var(--amber)';
+        toast(
+          state.uploadedDoc
+            ? 'Document attached — fields could not be auto-filled, but Claude will see the document on Generate'
+            : 'Document read, but no fields could be auto-filled',
+          state.uploadedDoc ? 'success' : 'error'
+        );
       } else {
-        uploadHint.textContent = `✓ Filled ${filled} field${filled !== 1 ? 's' : ''} from ${file.name}${skippedNote}`;
+        uploadHint.textContent = `✓ Filled ${filled} field${filled !== 1 ? 's' : ''} from ${file.name}${skippedNote}${docNote}`;
         uploadHint.style.color = 'var(--green)';
         toast(`Auto-filled ${filled} field${filled !== 1 ? 's' : ''} from document`);
       }
     } catch (err) {
+      state.uploadedDoc = null;
       uploadHint.textContent = '✗ ' + err.message;
       uploadHint.style.color = 'var(--red)';
       toast(err.message, 'error');
