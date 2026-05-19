@@ -36,10 +36,11 @@ function runClaudeCli({ systemPrompt, userMsg, model, timeoutMs }) {
       ? `${systemPrompt}\n\n---\n\n${userMsg}`
       : userMsg;
 
-    // CRITICAL: strip ANTHROPIC_API_KEY from the subprocess env. The Claude CLI
-    // prioritizes that env var over the OAuth token in ~/.claude.json — so if
-    // the env var is invalid (or even set at all when the user wants subscription
-    // auth), every call fails with "Invalid API key" even though OAuth is fine.
+    // Strip ANTHROPIC_API_KEY from the subprocess env. We want `claude --print`
+    // to use the OAuth credentials written by `claude auth login` (via our
+    // in-app Connect flow), not whatever ANTHROPIC_API_KEY the user set in
+    // .env — which is often invalid for subscription auth and would otherwise
+    // make every call fail with "Invalid API key."
     const subprocEnv = { ...process.env };
     delete subprocEnv.ANTHROPIC_API_KEY;
 

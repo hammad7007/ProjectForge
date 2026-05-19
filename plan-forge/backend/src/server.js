@@ -282,6 +282,8 @@ app.post("/api/config/cli/oauth/submit", authRequired, async (req, res) => {
   try {
     const result = await submitOAuthCode({ sessionId, code });
     // Auto-save claude-cli as the active provider so the app starts using it.
+    // No API key needed in DB — `claude auth login` persists OAuth credentials
+    // to its own store, which `claude --print` reads automatically.
     const finalModel = (model && String(model).trim()) || "";
     try {
       const { rows } = await pool.query(

@@ -1,9 +1,14 @@
-// In-app driver for `claude setup-token` OAuth flow.
-// Spawns the CLI in a pseudo-terminal (because it refuses to print to a non-TTY),
-// captures the OAuth URL it prints, waits for its paste prompt, then sends the
-// user-supplied code wrapped in bracketed-paste markers so the Ink-based UI
-// actually picks it up. The completed token is written by the CLI itself to
-// /root/.claude.json on the backend container's filesystem.
+// In-app driver for `claude auth login --claudeai` OAuth flow.
+// Spawns the CLI in a pseudo-terminal (it refuses to print to a non-TTY),
+// captures the OAuth URL, waits for its paste prompt, then sends the
+// user-supplied code one character at a time. The CLI itself persists the
+// resulting OAuth credentials to its credential store, which `claude --print`
+// reads automatically in normal mode (no env var injection from us required).
+//
+// We use `auth login`, NOT `setup-token`: setup-token prints a sk-ant-oat
+// long-lived token to stdout that's rejected as ANTHROPIC_API_KEY ("Invalid
+// API key" — oat tokens aren't API keys), and it doesn't write the credential
+// store. `auth login` is the proper subscription-OAuth path.
 
 const pty = require("node-pty");
 const crypto = require("crypto");
@@ -120,7 +125,7 @@ async function startOAuthFlow(userId) {
   const subprocEnv = { ...process.env, TERM: "xterm-256color" };
   delete subprocEnv.ANTHROPIC_API_KEY;
 
-  const child = pty.spawn("claude", ["setup-token"], {
+  const child = pty.spawn("claude", ["auth", "login", "--claudeai"], {
     name: "xterm-256color",
     cols: 1000,
     rows: 30,
