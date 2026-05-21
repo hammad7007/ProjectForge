@@ -1,6 +1,11 @@
 -- Plan Forge — database schema
 -- Runs automatically on first db container boot (see docker-compose.yml).
 
+-- pgvector enables similarity search over artifact embeddings (see
+-- backend/src/embeddings.js + backend/src/agents.js). The Docker image is
+-- `pgvector/pgvector:pg16` which ships with the extension.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -19,6 +24,10 @@ CREATE TABLE IF NOT EXISTS artifacts (
   parent_id INTEGER REFERENCES artifacts(id) ON DELETE CASCADE,
   revision INTEGER NOT NULL DEFAULT 1,
   revision_note TEXT,
+  -- 384 dimensions matches the Xenova/all-MiniLM-L6-v2 model used in
+  -- backend/src/embeddings.js. Populated asynchronously after generation
+  -- so it doesn't block the POST /api/artifacts response.
+  embedding vector(384),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

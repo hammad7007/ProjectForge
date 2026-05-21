@@ -28,7 +28,29 @@ async function waitForDb(maxAttempts = 30, delayMs = 2000) {
   throw new Error("db never became ready");
 }
 
+// Tracks whether pgvector is available. Read by callers
+// (embeddings.js / agents.js) to decide whether to retrieve / store
+// embeddings or quietly skip RAG.
+let HAS_VECTOR = false;
+
 async function ensureSchema() {
+  // Try to enable pgvector — needed for the RAG layer. The official
+  // `pgvector/pgvector:pg16` image ships with the extension preinstalled;
+  // a legacy `postgres:16-alpine` install won't have it, in which case we
+  // log a warning and skip the embedding column so the rest of the app
+  // still boots.
+  try {
+    await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+    HAS_VECTOR = true;
+  } catch (extErr) {
+    console.warn(
+      "[db] pgvector extension unavailable — RAG retrieval will be disabled. " +
+      "Switch the db image to `pgvector/pgvector:pg16` to enable. Detail: " +
+      (extErr.message || extErr)
+    );
+    HAS_VECTOR = false;
+  }
+
   // Idempotent — in case init.sql didn't run (e.g. mounted volume already existed).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -96,7 +118,31 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_push_history_artifact
       ON push_history(artifact_id);
   `);
-  console.log("[db] schema ensured");
+
+  // Add embedding column when pgvector is available. Done as a separate
+  // statement so the rest of the schema doesn't blow up if the extension
+  // failed to install (e.g. legacy postgres image still in use).
+  if (HAS_VECTOR) {
+    try {
+      await pool.query(
+        `ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS embedding vector(384);`
+      );
+    } catch (colErr) {
+      console.warn(
+        "[db] could not add artifacts.embedding column — RAG retrieval will be disabled. Detail: " +
+        (colErr.message || colErr)
+      );
+      HAS_VECTOR = false;
+    }
+  }
+
+  console.log(
+    "[db] schema ensured" + (HAS_VECTOR ? " (pgvector active)" : " (pgvector OFF — RAG disabled)")
+  );
+}
+
+function hasVector() {
+  return HAS_VECTOR;
 }
 
 async function initDb() {
@@ -104,4 +150,4 @@ async function initDb() {
   await ensureSchema();
 }
 
-module.exports = { pool, initDb };
+module.exports = { pool, initDb, hasVector };

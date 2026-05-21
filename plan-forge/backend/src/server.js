@@ -10,9 +10,16 @@ const path = require("path");
 const fs = require("fs");
 
 const { pool, initDb } = require("./db");
-const { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES } = require("./prompts");
+const { SYSTEM_PROMPT, INSTRUCTIONS, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES } = require("./prompts");
 const { runClaudeCli, checkClaudeCli } = require("./cli");
 const { startOAuthFlow, submitOAuthCode } = require("./cli-oauth");
+const { runAgentPipeline, embedAndStore, backfillEmbeddings } = require("./agents");
+const { markdownToDocx, markdownToPdf } = require("./exporters");
+
+// USE_AGENTS=true (default) runs the 5-agent LangGraph pipeline for
+// generation. Set to "false" to fall back to the legacy single-call path
+// regardless of pipeline health. See backend/src/agents.js for the graph.
+const USE_AGENTS = (process.env.USE_AGENTS || "true").toLowerCase() !== "false";
 
 function normalizeMethodology(m) {
   if (typeof m !== "string") return null;
@@ -36,13 +43,15 @@ app.use(cors());
 // nginx and multer together.
 app.use(express.json({ limit: "5mb" }));
 
-// File upload middleware. 25 MB cap — must stay in sync with nginx's
+// File upload middleware. 100 MB cap — must stay in sync with nginx's
 // `client_max_body_size` in frontend/nginx.conf. If they diverge the
 // smaller wins and the user gets a confusing 413 from whichever layer
 // rejects first.
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_UPLOAD_LABEL = "100 MB";
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }
+  limits: { fileSize: MAX_UPLOAD_BYTES }
 });
 
 // ------- helpers -------
@@ -346,7 +355,7 @@ function handleUpload(req, res, next) {
   upload.single("file")(req, res, (err) => {
     if (!err) return next();
     if (err.code === "LIMIT_FILE_SIZE") {
-      return res.status(413).json({ error: "File is too large. Maximum size is 25 MB." });
+      return res.status(413).json({ error: `File is too large. Maximum size is ${MAX_UPLOAD_LABEL}.` });
     }
     return res.status(400).json({ error: err.message || "Upload failed" });
   });
@@ -367,14 +376,49 @@ app.post("/api/extract", authRequired, handleUpload, async (req, res) => {
     const ext = path.extname(file.originalname).toLowerCase();
 
     if (!SUPPORTED_UPLOAD_EXTS.has(ext)) {
+      // Surface friendly guidance for common formats we deliberately don't
+      // parse server-side (binary office formats, raster images) so the user
+      // knows what to do next instead of just hitting a wall.
+      const hint = (() => {
+        if (ext === ".mpp" || ext === ".mpx") {
+          return ' MS Project files aren\'t supported — open the file in MS Project and use File → Save As → Excel Workbook (.xlsx) or Export → PDF, then upload that.';
+        }
+        if (ext === ".png" || ext === ".jpg" || ext === ".jpeg" || ext === ".gif" || ext === ".webp" || ext === ".bmp") {
+          return ' Image-only files (PNG/JPG) can\'t be read — paste the text into a TXT/DOCX file, or use a PDF that contains actual text (not scanned pages).';
+        }
+        if (ext === ".doc") {
+          return ' Legacy Word (.doc) isn\'t supported — open it in Word and save as .docx.';
+        }
+        if (ext === ".ppt" || ext === ".pptx" || ext === ".key") {
+          return ' Slide decks aren\'t parsed — export the slides as PDF and upload that instead.';
+        }
+        if (ext === ".zip" || ext === ".rar" || ext === ".7z") {
+          return ' Archives aren\'t supported — upload the actual document inside instead.';
+        }
+        return "";
+      })();
       return res.status(415).json({
-        error: `unsupported file type "${ext || file.originalname}". Supported: ${SUPPORTED_UPLOAD_LABEL}.`
+        error: `Unsupported file type "${ext || file.originalname}". Supported: ${SUPPORTED_UPLOAD_LABEL}.${hint}`
       });
     }
 
     if (ext === ".pdf") {
-      const data = await pdfParse(file.buffer);
-      rawText = data.text;
+      try {
+        const data = await pdfParse(file.buffer);
+        rawText = data.text || "";
+      } catch (pdfErr) {
+        console.error("[extract] pdf-parse failed:", pdfErr.message);
+        const msg = String(pdfErr.message || "").toLowerCase();
+        let hint = "";
+        if (msg.includes("encrypted") || msg.includes("password")) {
+          hint = " The PDF appears to be password-protected — remove the password and try again.";
+        } else if (msg.includes("invalid pdf") || msg.includes("xref")) {
+          hint = " The PDF file looks corrupted — re-export from the source application and try again.";
+        }
+        return res.status(422).json({
+          error: `Could not read "${file.originalname}".${hint} If this is a scanned or image-only PDF, OCR isn't supported — please use a text-based PDF, Word, Excel, or paste the content into a .txt file.`
+        });
+      }
     } else if (ext === ".docx") {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
       rawText = result.value;
@@ -407,7 +451,7 @@ app.post("/api/extract", authRequired, handleUpload, async (req, res) => {
 
     if (!rawText.trim()) {
       return res.status(422).json({
-        error: `could not extract text from "${file.originalname}" — if this is a scanned/image PDF, OCR isn't supported yet. Try a text-based PDF, Word, Excel, or plain text file.`
+        error: `No readable text found in "${file.originalname}". If this is a scanned/image PDF, OCR isn't supported yet — please use a text-based PDF, Word (.docx), Excel (.xlsx), or paste the content into a .txt file.`
       });
     }
 
@@ -938,7 +982,7 @@ app.get("/api/artifacts/:id/export", authRequired, async (req, res) => {
   const tool = (req.query.tool || "").toLowerCase();
 
   if (!Number.isInteger(id)) return res.status(400).json({ error: "invalid id" });
-  if (!["markdown", "csv", "excel", "pdf", "jira", "msproject", "asana", "azure", "monday", "generic", "trello", "linear", "github", "smartsheet", "wrike", "notion", "confluence", "googlesheets"].includes(format))
+  if (!["markdown", "csv", "excel", "word", "pdf", "jira", "msproject", "asana", "azure", "monday", "generic", "trello", "linear", "github", "smartsheet", "wrike", "notion", "confluence", "googlesheets"].includes(format))
     return res.status(400).json({ error: "unsupported format" });
 
   try {
@@ -1035,8 +1079,26 @@ app.get("/api/artifacts/:id/export", authRequired, async (req, res) => {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${safeName}-googlesheets.csv"`);
       res.send(csv);
+    } else if (format === "word") {
+      // Render the artifact's markdown directly to a .docx so every
+      // artifact_type works without a type-specific generator. Mermaid
+      // blocks are emitted as monospace code with a "(diagram source)"
+      // caption — see backend/src/exporters.js for the renderer.
+      const buffer = await markdownToDocx(artifact.content, {
+        title: artifact.title,
+        artifactType: artifact.artifact_type,
+      });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}.docx"`);
+      res.send(buffer);
     } else if (format === "pdf") {
-      res.status(501).json({ error: "PDF export coming soon" });
+      const buffer = await markdownToPdf(artifact.content, {
+        title: artifact.title,
+        artifactType: artifact.artifact_type,
+      });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}.pdf"`);
+      res.send(buffer);
     }
   } catch (err) {
     console.error("[export artifact]", err);
@@ -1547,7 +1609,7 @@ async function resolveLlmConfig() {
 
 // Call the configured LLM with a system + user message and return the text content.
 // Returns { ok: true, content } or { ok: false, status, error, detail }.
-async function callLLM({ provider, model, apiKey, systemPrompt, userMsg, maxTokens = 2500 }) {
+async function callLLM({ provider, model, apiKey, systemPrompt, userMsg, maxTokens = 8000 }) {
   // Claude CLI takes a separate code path — subprocess instead of HTTP.
   if (provider === "claude-cli") {
     try {
@@ -1708,7 +1770,7 @@ app.post("/api/artifacts/:id/revise", authRequired, async (req, res) => {
     apiKey: cfg.apiKey,
     systemPrompt: SYSTEM_PROMPT,
     userMsg,
-    maxTokens: 2500,
+    maxTokens: 8000,
   });
 
   if (!result.ok) {
@@ -1730,7 +1792,14 @@ app.post("/api/artifacts/:id/revise", authRequired, async (req, res) => {
        RETURNING id, artifact_type, title, inputs, content, parent_id, revision, revision_note, created_at`,
       [req.user.sub, source.artifact_type, source.title, inputs, result.content, rootId, trimmedInstructions]
     );
-    res.json({ artifact: rows[0] });
+    const saved = rows[0];
+    embedAndStore({
+      artifactId: saved.id,
+      title: saved.title,
+      inputs: saved.inputs,
+      content: saved.content,
+    }).catch(() => {});
+    res.json({ artifact: saved });
   } catch (err) {
     console.error("[revise: save]", err);
     res.status(500).json({ error: "failed to save revision" });
@@ -1746,12 +1815,19 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
   if (!inputs || typeof inputs !== "object")
     return res.status(400).json({ error: "inputs object required" });
 
+  // 24 KB of uploaded source kept verbatim. A typical SOW after PDF/DOCX
+  // extraction is 6-15 KB; a long RFP can be 30-40 KB. 24 KB covers the
+  // common case end-to-end so we don't drop the back half of the doc.
+  // The downstream model still sees the truncation if the input exceeds
+  // this; the cap is here so a malicious or accidental 5 MB upload
+  // doesn't blow up the LLM context.
   const safeSourceDocument =
     typeof source_document === "string" && source_document.trim()
-      ? source_document.slice(0, 12000)
+      ? source_document.slice(0, 24000)
       : null;
 
-  const userMsg = buildUserPrompt(artifact_type, inputs, normalizeMethodology(methodology), safeSourceDocument);
+  const normMethodology = normalizeMethodology(methodology);
+  const userMsg = buildUserPrompt(artifact_type, inputs, normMethodology, safeSourceDocument);
 
   // fetch config from database
   let configRows, provider, model, apiKey;
@@ -1779,8 +1855,35 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
 
   let llmResp, llmData;
   let cliContent = null;
+  // If the LangGraph 5-agent pipeline succeeds, we skip the legacy provider
+  // blocks below and jump straight to the save step using this content.
+  let agentContent = null;
 
-  if (provider === "claude-cli") {
+  if (USE_AGENTS) {
+    try {
+      agentContent = await runAgentPipeline({
+        callLLM: ({ systemPrompt, userMsg, maxTokens }) =>
+          callLLM({ provider, model, apiKey, systemPrompt, userMsg, maxTokens }),
+        userId: req.user.sub,
+        artifactType: artifact_type,
+        inputs,
+        methodology: normMethodology,
+        sourceDocument: safeSourceDocument,
+        baseSystem: SYSTEM_PROMPT,
+        artifactInstruction: INSTRUCTIONS[artifact_type] || "",
+      });
+    } catch (agentErr) {
+      // Any failure in the agent graph → fall through to the single-call
+      // legacy path so the user still gets an artifact. We deliberately
+      // don't expose the agent error to the client.
+      console.warn("[agents] pipeline failed, falling back to single-call:", agentErr.message);
+      agentContent = null;
+    }
+  }
+
+  if (agentContent) {
+    // Skip the per-provider legacy block entirely.
+  } else if (provider === "claude-cli") {
     try {
       cliContent = await runClaudeCli({ systemPrompt: SYSTEM_PROMPT, userMsg, model });
       if (!cliContent) return res.status(502).json({ error: "claude-cli returned empty output" });
@@ -1799,7 +1902,7 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
         },
         body: JSON.stringify({
           model: model,
-          max_tokens: 2500,
+          max_tokens: 8000,
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: userMsg }],
         }),
@@ -1833,7 +1936,7 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
         },
         body: JSON.stringify({
           model: model,
-          max_tokens: 2500,
+          max_tokens: 8000,
           temperature: 1,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
@@ -1870,7 +1973,7 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
             contents: [{ role: "user", parts: [{ text: userMsg }] }],
-            generationConfig: { maxOutputTokens: 2500 },
+            generationConfig: { maxOutputTokens: 8000 },
           }),
         }
       );
@@ -1898,7 +2001,9 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
   }
 
   let content = "";
-  if (provider === "claude-cli") {
+  if (agentContent) {
+    content = agentContent;
+  } else if (provider === "claude-cli") {
     content = cliContent;
   } else if (provider === "claude") {
     content = (llmData.content || [])
@@ -1935,7 +2040,17 @@ app.post("/api/artifacts", authRequired, async (req, res) => {
        RETURNING id, artifact_type, title, inputs, content, parent_id, revision, revision_note, created_at`,
       [req.user.sub, artifact_type, cleanTitle, inputs, content]
     );
-    res.json({ artifact: rows[0] });
+    const saved = rows[0];
+    // Embed in the background so the Retriever node has this artifact
+    // available next time. Never block the client on this — failures are
+    // logged inside embedAndStore and the artifact is already persisted.
+    embedAndStore({
+      artifactId: saved.id,
+      title: saved.title,
+      inputs: saved.inputs,
+      content: saved.content,
+    }).catch(() => {});
+    res.json({ artifact: saved });
   } catch (err) {
     console.error("[save artifact]", err);
     res.status(500).json({ error: "failed to save artifact" });
@@ -1958,7 +2073,17 @@ initDb()
   .then(() => {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`[plan-forge] backend listening on :${PORT}`);
+      console.log(`[plan-forge] agents: ${USE_AGENTS ? "ON (5-stage LangGraph)" : "OFF (single-call)"}`);
     });
+    // Run embedding backfill in the background so existing artifacts
+    // become retrievable for the RAG layer. Never blocks request serving.
+    if (USE_AGENTS) {
+      setImmediate(() => {
+        backfillEmbeddings({ limit: 200 }).catch((err) =>
+          console.warn("[boot] embedding backfill failed:", err.message)
+        );
+      });
+    }
   })
   .catch((err) => {
     console.error("[boot] db init failed:", err);

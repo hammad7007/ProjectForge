@@ -1355,10 +1355,7 @@
     renderArchive();
     resetOutput();
     dynWrap.querySelectorAll('input, textarea').forEach(el => el.value = '');
-    if (uploadHint) {
-      uploadHint.textContent = '';
-      uploadHint.style.color = '';
-    }
+    resetUploadHint();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
@@ -1426,6 +1423,12 @@
   const uploadDocBtn = $('upload-doc-btn');
   const uploadFileInput = $('upload-file-input');
   const uploadHint = $('upload-hint');
+
+  function resetUploadHint() {
+    if (!uploadHint) return;
+    uploadHint.textContent = uploadHint.dataset.default || '';
+    uploadHint.style.color = '';
+  }
 
   uploadDocBtn.addEventListener('click', () => {
     uploadFileInput.value = '';
@@ -1981,6 +1984,8 @@
     'markdown': 'md',
     'csv': 'csv',
     'excel': 'xlsx',
+    'word': 'docx',
+    'pdf': 'pdf',
     'jira': 'csv',
     'msproject': 'xml',
     'asana': 'csv',
@@ -1996,6 +2001,12 @@
     'confluence': 'txt',
     'googlesheets': 'csv'
   };
+
+  // Word, PDF, Excel, and Markdown are always available regardless of
+  // artifact type — they render directly from the artifact's markdown
+  // content via backend/src/exporters.js, so there's no type-specific
+  // generator gating them.
+  const UNIVERSAL_FORMATS = ['markdown', 'excel', 'word', 'pdf', 'generic'];
 
   // Smart export formats mapping based on artifact type
   const artifactTypeFormats = {
@@ -2022,6 +2033,8 @@
     'markdown': 'Markdown File',
     'csv': 'CSV Format',
     'excel': 'Excel Workbook',
+    'word': 'Word Document',
+    'pdf': 'PDF Document',
     'jira': 'Jira Issues',
     'msproject': 'MS Project',
     'asana': 'Asana Tasks',
@@ -2043,6 +2056,8 @@
     'markdown': '📄',
     'csv': '📊',
     'excel': '📈',
+    'word': '📝',
+    'pdf': '📕',
     'jira': '🔵',
     'msproject': '📅',
     'asana': '🟦',
@@ -2062,9 +2077,13 @@
   // Show/hide menu items based on the current artifact type. Items that
   // don't apply (e.g. "Jira Issues" for a retrospective) are hidden via the
   // `hidden` HTML attribute, which CSS turns into `display: none`.
+  // The universal formats (Markdown, Excel, Word, PDF, Generic PM Excel)
+  // are always shown — they render straight from the artifact's markdown
+  // via the backend exporters module.
   function updateExportOptions(artifactType) {
     if (!downloadMenu) return;
-    const allowedFormats = artifactTypeFormats[artifactType] || Object.keys(formatExtensions);
+    const typeFormats = artifactTypeFormats[artifactType] || Object.keys(formatExtensions);
+    const allowedFormats = Array.from(new Set([...UNIVERSAL_FORMATS, ...typeFormats]));
     downloadMenu.querySelectorAll('.menu-item').forEach(item => {
       const format = item.dataset.format;
       if (allowedFormats.includes(format)) item.removeAttribute('hidden');

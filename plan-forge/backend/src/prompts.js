@@ -666,7 +666,7 @@ function buildUserPrompt(artifactType, inputs, methodology, sourceDocument) {
 
   const sourceBlock =
     sourceDocument && String(sourceDocument).trim()
-      ? `Source document (verbatim user-uploaded content — treat as authoritative project context, prefer its facts over generic assumptions, do NOT quote it back unless asked):\n---\n${String(sourceDocument).slice(0, 12000)}\n---\n\n`
+      ? `Source document (verbatim user-uploaded content — treat as authoritative project context, prefer its facts over generic assumptions, do NOT quote it back unless asked):\n---\n${String(sourceDocument).slice(0, 24000)}\n---\n\n`
       : "";
 
   const contextBlock =
@@ -675,7 +675,14 @@ function buildUserPrompt(artifactType, inputs, methodology, sourceDocument) {
     methodologyContext(methodology) +
     "\n\n";
 
-  return sourceBlock + contextBlock + instruction;
+  const completenessNote =
+    `\n\nCOMPLETENESS REQUIREMENTS:\n` +
+    `* Include EVERY section listed in the template above. Do not skip or merge sections.\n` +
+    `* Preserve EVERY name, date, number, dependency, and constraint from the source document and the user-provided context — never paraphrase them away.\n` +
+    `* Prefer thoroughness over brevity. Use the full output budget if needed.\n` +
+    `* If a section has many items (risks, tasks, stakeholders, etc.), list them all — do not summarise to a "top 5".\n`;
+
+  return sourceBlock + contextBlock + instruction + completenessNote;
 }
 
 function buildRevisePrompt(artifactType, inputs, previousContent, instructions, methodology) {
@@ -704,4 +711,7 @@ function buildRevisePrompt(artifactType, inputs, previousContent, instructions, 
 
 const VALID_TYPES = Object.keys(INSTRUCTIONS);
 
-module.exports = { SYSTEM_PROMPT, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES };
+// INSTRUCTIONS is the artifact_type → template lookup used by the agent
+// pipeline (backend/src/agents.js) so the Drafter and Refiner stages can
+// see the canonical structure they need to follow.
+module.exports = { SYSTEM_PROMPT, INSTRUCTIONS, buildUserPrompt, buildRevisePrompt, buildExtractionPrompt, EXTRACT_FIELDS, VALID_TYPES, VALID_METHODOLOGIES };

@@ -362,7 +362,7 @@
             <button type="button" class="btn btn-ghost btn-sm" id="upload-doc-btn">
               <svg class="icon" aria-hidden="true"><use href="#i-paperclip"></use></svg> Upload &amp; Fill from Document
             </button>
-            <span class="upload-hint" id="upload-hint"></span>
+            <span class="upload-hint" id="upload-hint" data-default="Accepts Excel, Word, PDF, TXT, CSV, RTF, JSON, HTML &middot; up to 100&nbsp;MB">Accepts Excel, Word, PDF, TXT, CSV, RTF, JSON, HTML &middot; up to 100&nbsp;MB</span>
             <input type="file" id="upload-file-input"
               accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.rtf,.json,.html,.htm"
               style="display:none" />
@@ -399,9 +399,11 @@
               </button>
               <div class="download-menu hidden" id="download-menu" role="menu">
                 <span class="group-label">Standard Formats</span>
+                <button class="menu-item" role="menuitem" data-format="word">Word Document</button>
+                <button class="menu-item" role="menuitem" data-format="pdf">PDF Document</button>
+                <button class="menu-item" role="menuitem" data-format="excel">Excel Workbook</button>
                 <button class="menu-item" role="menuitem" data-format="markdown">Markdown File</button>
                 <button class="menu-item" role="menuitem" data-format="csv">CSV Format</button>
-                <button class="menu-item" role="menuitem" data-format="excel">Excel Workbook</button>
                 <button class="menu-item" role="menuitem" data-format="generic">Generic PM Excel</button>
 
                 <span class="group-label">Project Management</span>

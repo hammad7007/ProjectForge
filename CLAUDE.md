@@ -29,14 +29,18 @@ It's a single-user productivity tool you run locally or on a private box.
 | Markdown     | `marked` v11               | Fast, permissive, good defaults                  |
 | Diagrams     | `mermaid` v10              | For Gantt charts + quadrant charts in output     |
 | Syntax HL    | `highlight.js` v11         | Code blocks in output                            |
-| Backend      | Node 20 + Express 4        | Small surface area, fast to iterate              |
+| Backend      | Node 20 (slim) + Express 4 | Small surface area. **slim, not alpine** — onnxruntime-node needs glibc |
 | Auth         | JWT (7-day) + bcryptjs     | Standard stateless auth                          |
-| Database     | PostgreSQL 16              | JSONB for flexible `inputs`, relational integrity |
-| Web server   | nginx (alpine)             | Serves static + reverse-proxies `/api/*`         |
-| Orchestration| Docker Compose             | Three services: `db`, `backend`, `frontend`      |
-| LLM          | `claude-sonnet-4-20250514` via Anthropic REST API | Set in `backend/src/server.js` |
+| Database     | **PostgreSQL 16 + pgvector** | JSONB for `inputs`, `vector(384)` for embeddings |
+| Web server   | nginx (alpine)             | Static + `/api/*` reverse proxy. **100 MB upload, 600 s LLM timeout.** |
+| Orchestration| Docker Compose             | Three services: `db` (pgvector), `backend`, `frontend` |
+| Agents       | **`@langchain/langgraph`** | 5-node pipeline (Retriever → Planner → Drafter → Critic → Refiner) wrapped around `callLLM()` |
+| Embeddings   | **`@xenova/transformers`** running `all-MiniLM-L6-v2` locally | 384-dim, no API key, runs in-process |
+| LLM          | Claude API / OpenAI / Gemini / Claude CLI (OAuth) | All four pluggable through `callLLM()` in `server.js` |
 
 No frontend framework. No ORM. No build system. **Keep it that way unless there's a strong reason.**
+
+**Agent layer.** Every `POST /api/artifacts` first tries the 5-stage LangGraph pipeline. On any node error it falls back to the legacy single-call generator so the user never sees a broken request. Toggle with `USE_AGENTS` (default `true`). The RAG retriever pulls top-3 cosine-similar past artifacts (per-user, same-type-first) as in-context examples. See `backend/src/agents.js` and `backend/src/embeddings.js`. Full handoff doc: `docs/PLAN_FORGE_ARCHITECTURE.md` (+ `.docx`).
 
 ---
 

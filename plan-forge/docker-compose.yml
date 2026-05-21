@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector image is Postgres 16 with the `vector` extension pre-installed.
+    # Used by the RAG layer to store + retrieve artifact embeddings (see
+    # backend/src/embeddings.js and backend/src/agents.js).
+    image: pgvector/pgvector:pg16
     container_name: planforge-db
     restart: unless-stopped
     environment:
@@ -28,9 +31,18 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       PORT: "4000"
       NODE_ENV: production
+      # USE_AGENTS=true runs the 5-agent LangGraph pipeline
+      # (Retriever→Planner→Drafter→Critic→Refiner) for every generation.
+      # Set to false to fall back to a single-call generation per artifact.
+      USE_AGENTS: ${USE_AGENTS:-true}
+      # Cache the local embedding model (all-MiniLM-L6-v2, ~25 MB) so we
+      # don't re-download it on every container start.
+      TRANSFORMERS_CACHE: /root/.cache/transformers
+      HF_HOME: /root/.cache/huggingface
     volumes:
-      # Persist Claude CLI auth (~/.claude, ~/.claude.json) across rebuilds
-      # so `docker compose exec backend claude /login` only needs to run once.
+      # Persist Claude CLI auth (~/.claude, ~/.claude.json) AND the local
+      # transformers model cache (~/.cache) across rebuilds so embeddings
+      # initialise instantly on subsequent boots.
       - claude_home:/root
     depends_on:
       db:
